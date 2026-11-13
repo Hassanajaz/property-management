@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Lettly",
+    "slug": "lettly",
+    "scheme": "lettly",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "uk.co.example.lettly",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take photos of a repair problem or a certificate to attach to your report.",
+        "NSPhotoLibraryUsageDescription": "Choose photos of a repair problem or a certificate to attach to your report."
+      }
+    },
+    "android": {
+      "package": "uk.co.example.lettly"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-image-picker"],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "lettly",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*", "infra"],
+  "scripts": {
+    "test": "npm test --workspace @lettly/core",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:web": "npm run dev --workspace @lettly/web",
+    "dev:mobile": "npm run start --workspace @lettly/mobile",
+    "deploy": "npm run deploy --workspace @lettly/infra --"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}
