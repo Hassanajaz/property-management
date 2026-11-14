@@ -10,6 +10,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 MODE="${1:-install}"
+# Expo packages often declare peer versions that npm treats as conflicts; this stops npm refusing to install.
+export npm_config_legacy_peer_deps=true
 
 say()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 fail() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
