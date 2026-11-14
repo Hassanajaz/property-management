@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "uk.co.example.lettly",
+      "bundleIdentifier": "uk.co.hassanajaz.lettly",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Take photos of a repair problem or a certificate to attach to your report.",
@@ -15,7 +15,7 @@
       }
     },
     "android": {
-      "package": "uk.co.example.lettly"
+      "package": "uk.co.hassanajaz.lettly"
     },
     "plugins": ["expo-router", "expo-secure-store", "expo-image-picker"],
     "experiments": {

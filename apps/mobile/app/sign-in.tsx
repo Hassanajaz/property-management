@@ -4,9 +4,10 @@ import { setNewPassword, signIn } from '@lettly/core';
 import { authConfig, useSession } from '../src/session';
 import { Button, styles } from '../src/ui';
 
+
 /** One sign-in for agency staff, landlords and tenants. */
 export default function SignIn() {
-  const { signedIn } = useSession();
+  const { signedIn, demo, signInDemo } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPasswordValue] = useState('');
@@ -30,6 +31,22 @@ export default function SignIn() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (demo) {
+    return (
+      <View style={[styles.page, { justifyContent: 'center' }]}>
+        <View style={styles.content}>
+          <Text style={styles.h1}>Lettly demo</Text>
+          <Text style={styles.muted}>
+            Sample data only: nothing is saved or sent. Choose who to sign in as. Report a repair as the tenant, then sign out and handle it as agency staff.
+          </Text>
+          <Button title="Tenant" onPress={() => signInDemo('tenant')} />
+          <Button title="Agency staff" kind="secondary" onPress={() => signInDemo('agency_staff')} />
+          <Button title="Landlord" kind="secondary" onPress={() => signInDemo('landlord')} />
+        </View>
+      </View>
+    );
   }
 
   return (

@@ -10,7 +10,7 @@ The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
 | Folder | What it is | State |
 | --- | --- | --- |
-| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in and API client | **Tested** (19 tests) and type-checked |
+| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (20 tests) and type-checked |
 | `apps/api` | API (Hono on AWS Lambda), database schema (Drizzle, PostgreSQL), row-level security, invites, maintenance, documents, rent ledger, GoCardless webhook | Written, **not yet run** |
 | `apps/web` | Web app (React, Vite): sign-in, compliance table, repairs, add property | Written, **not yet run** |
 | `apps/mobile` | iOS and Android app (Expo): sign-in, home, report a repair with photos, repair timeline | Written, **not yet run** |
@@ -21,6 +21,35 @@ installs were blocked there. Expect to fix small type or version errors in the
 other folders on the first `npm install` and `npm run typecheck`. Package
 versions were chosen from memory and may need bumping.
 
+## Try it on your iPhone (demo mode, no backend)
+
+The mobile app runs on sample data whenever no API address is configured, so
+you can try it before anything is deployed to AWS. From this folder on your Mac:
+
+```bash
+./run-on-iphone.sh            # builds with Xcode and installs on the plugged-in iPhone
+./run-on-iphone.sh expo-go    # no Xcode: scan a QR code and run inside Expo Go
+```
+
+**Install with Xcode (default).** Needs Xcode from the Mac App Store, the
+iPhone connected by cable, and your Apple ID added in Xcode > Settings >
+Accounts (a free Apple ID works). On the iPhone, turn on Settings > Privacy &
+Security > Developer Mode, and after the install trust your Apple ID under
+Settings > General > VPN & Device Management. With a free Apple ID the app
+stops opening after 7 days; run the script again to renew it.
+
+**Expo Go.** Install Expo Go from the App Store and keep the phone and Mac on
+the same Wi-Fi. The project targets Expo SDK 54, the version the App Store
+Expo Go supported when this was written. If Expo Go reports that the project
+is incompatible, run `EXPO_SDK=58 ./run-on-iphone.sh expo-go`.
+
+In the app, choose Tenant, Agency staff or Landlord. Data is shared between
+the three while the app stays open: report a repair as the tenant, tap
+"Switch person", and handle it as agency staff.
+
+This script has not been run by its author: package installs were blocked
+where the code was written. Send any error it prints and it can be fixed.
+
 ## First run
 
 You need Node 22.6 or later and an AWS account (choose the Paid plan; the
@@ -28,11 +57,9 @@ sign-up credits still apply).
 
 ```bash
 npm install
-npm test                # shared rules: should print 19 passing tests
+npm test                # shared rules: should print 20 passing tests
 npm run typecheck       # fix anything reported before going further
 
-# Mobile only: let Expo pick versions that match its SDK
-cd apps/mobile && npx expo install --fix && cd ../..
 ```
 
 ### Deploy the backend

@@ -68,9 +68,12 @@ export default function ReportRepair() {
       const photoDocumentIds: string[] = [];
       for (const photo of photos) {
         const ticket = await api.requestUpload({ fileName: photo.fileName, contentType: photo.mimeType, type: 'maintenance_photo' });
-        const file = await (await fetch(photo.uri)).blob();
-        const upload = await fetch(ticket.uploadUrl, { method: 'PUT', headers: { 'Content-Type': photo.mimeType }, body: file });
-        if (!upload.ok) throw new Error('A photo could not be uploaded. Please try again.');
+        // Demo mode has no file storage and returns no upload link.
+        if (ticket.uploadUrl) {
+          const file = await (await fetch(photo.uri)).blob();
+          const upload = await fetch(ticket.uploadUrl, { method: 'PUT', headers: { 'Content-Type': photo.mimeType }, body: file });
+          if (!upload.ok) throw new Error('A photo could not be uploaded. Please try again.');
+        }
         photoDocumentIds.push(ticket.documentId);
       }
       const created = await api.reportMaintenance({ title: title.trim(), description: description.trim(), category, urgency, photoDocumentIds });

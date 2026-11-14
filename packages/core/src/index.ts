@@ -9,3 +9,4 @@ export * from './maintenance.ts';
 export * from './plans.ts';
 export * from './auth.ts';
 export * from './client.ts';
+export * from './demo.ts';

@@ -1,6 +1,16 @@
 import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { createApiClient, identityFrom, refresh, type ApiClient, type AuthConfig, type Identity, type Session } from '@lettly/core';
+import {
+  createApiClient,
+  createDemoApi,
+  identityFrom,
+  refresh,
+  type ApiClient,
+  type AuthConfig,
+  type Identity,
+  type Role,
+  type Session,
+} from '@lettly/core';
 
 /** Set in apps/mobile/.env from the `cdk deploy` outputs. */
 export const authConfig: AuthConfig = {
@@ -10,11 +20,20 @@ export const authConfig: AuthConfig = {
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
 const STORE_KEY = 'lettly.session';
 
+/**
+ * Demo mode is on whenever no API address is configured. The app then runs on
+ * sample data held in memory, with no backend and no real sign-in.
+ */
+export const DEMO_MODE = API_URL === '';
+
 interface SessionValue {
   /** `undefined` while the stored session is being loaded. */
   identity: Identity | null | undefined;
   api: ApiClient;
+  demo: boolean;
   signedIn: (session: Session) => Promise<void>;
+  /** Demo mode only: enter the app as one of the sample people. */
+  signInDemo: (role: Role) => void;
   signOut: () => Promise<void>;
 }
 
@@ -22,22 +41,24 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<Session | null>(null);
-  const [identity, setIdentity] = useState<Identity | null | undefined>(undefined);
+  const [identity, setIdentity] = useState<Identity | null | undefined>(DEMO_MODE ? null : undefined);
 
   const store = useCallback(async (session: Session | null) => {
     sessionRef.current = session;
     setIdentity(session ? identityFrom(session) : null);
+    if (DEMO_MODE) return;
     if (session) await SecureStore.setItemAsync(STORE_KEY, JSON.stringify(session));
     else await SecureStore.deleteItemAsync(STORE_KEY);
   }, []);
 
   useEffect(() => {
+    if (DEMO_MODE) return;
     SecureStore.getItemAsync(STORE_KEY)
       .then((raw) => store(raw ? (JSON.parse(raw) as Session) : null))
       .catch(() => store(null));
   }, [store]);
 
-  const api = useMemo(
+  const liveApi = useMemo(
     () =>
       createApiClient(API_URL, async () => {
         let session = sessionRef.current;
@@ -57,8 +78,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [store],
   );
 
+  const role = identity?.role;
+  const api = useMemo(() => (DEMO_MODE && role ? createDemoApi(role) : liveApi), [role, liveApi]);
+
   const value = useMemo<SessionValue>(
-    () => ({ identity, api, signedIn: (session) => store(session), signOut: () => store(null) }),
+    () => ({
+      identity,
+      api,
+      demo: DEMO_MODE,
+      signedIn: (session) => store(session),
+      signInDemo: (demoRole) => setIdentity({ userId: `demo-${demoRole}`, email: `${demoRole.replace('_', '.')}@demo.example`, orgId: 'demo', role: demoRole }),
+      signOut: async () => {
+        if (DEMO_MODE) setIdentity(null);
+        else await store(null);
+      },
+    }),
     [identity, api, store],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

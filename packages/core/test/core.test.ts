@@ -187,3 +187,39 @@ test('plans: property limits', () => {
   assert.equal(smallestPlanFor('agency', 21)?.id, 'agency_growth');
   assert.equal(smallestPlanFor('agency', 5000)?.id, 'agency_unlimited');
 });
+
+test('demo: each role sees only its own data and the repair flow works end to end', async () => {
+  const { createDemoApi, resetDemo } = await import('../src/index.ts');
+  resetDemo();
+  const tenant = createDemoApi('tenant');
+  const staff = createDemoApi('agency_staff');
+  const landlord = createDemoApi('landlord');
+
+  assert.equal((await tenant.listProperties()).length, 1);
+  assert.equal((await landlord.listProperties()).length, 2);
+  assert.equal((await staff.listProperties()).length, 3);
+  await assert.rejects(() => tenant.listCompliance());
+
+  const compliance = await staff.listCompliance();
+  const statuses = new Set(compliance.items.map((i) => i.status));
+  for (const status of ['valid', 'due_soon', 'overdue', 'missing']) assert.ok(statuses.has(status as never), `demo shows ${status}`);
+  assert.ok(compliance.score > 0 && compliance.score < 100);
+
+  // Tenant reports, staff handle it, tenant confirms.
+  const created = await tenant.reportMaintenance({ title: 'Kitchen tap dripping', description: 'Drips constantly', category: 'plumbing', urgency: 'routine' });
+  assert.ok((await staff.listMaintenance()).some((r) => r.id === created.id));
+  assert.ok(!(await landlord.listMaintenance()).some((r) => r.id === 'does-not-exist'));
+  await assert.rejects(() => tenant.updateMaintenance(created.id, { status: 'triaged' }));
+  await staff.updateMaintenance(created.id, { status: 'triaged', message: 'Plumber being arranged' });
+  await staff.updateMaintenance(created.id, { status: 'scheduled', appointmentAt: new Date().toISOString() });
+  await staff.updateMaintenance(created.id, { status: 'completed' });
+  await tenant.updateMaintenance(created.id, { status: 'confirmed' });
+  const final = await tenant.getMaintenance(created.id);
+  assert.equal(final.status, 'confirmed');
+  assert.equal(final.updates?.length, 5);
+
+  // Landlord approves the quoted fence repair on their own property.
+  const fence = (await landlord.listMaintenance()).find((r) => r.status === 'awaiting_landlord_approval');
+  assert.ok(fence);
+  assert.equal((await landlord.updateMaintenance(fence.id, { status: 'scheduled' })).status, 'scheduled');
+});

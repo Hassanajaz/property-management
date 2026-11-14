@@ -12,7 +12,7 @@ const COMPLIANCE_LABEL = { valid: 'Valid', due_soon: 'Due soon', overdue: 'Overd
  * Staff and landlords also see the compliance score and what needs attention.
  */
 export default function Home() {
-  const { identity, api, signOut } = useSession();
+  const { identity, api, signOut, demo } = useSession();
   const [repairs, setRepairs] = useState<MaintenanceRequestDto[]>([]);
   const [compliance, setCompliance] = useState<{ score: number; items: ComplianceItemDto[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,6 +47,7 @@ export default function Home() {
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      {demo ? <Text style={styles.muted}>Demo mode: sample data, nothing is saved. Signed in as {role.replace('_', ' ')}.</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {tenant ? <Button title="Report a repair" onPress={() => router.push('/report')} /> : null}
@@ -84,7 +85,7 @@ export default function Home() {
 
       <View style={{ marginTop: 24, gap: 8 }}>
         <Text style={styles.muted}>Signed in as {identity.email}</Text>
-        <Button title="Sign out" kind="secondary" onPress={signOut} />
+        <Button title={demo ? 'Switch person' : 'Sign out'} kind="secondary" onPress={signOut} />
       </View>
     </ScrollView>
   );
