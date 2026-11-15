@@ -33,6 +33,16 @@ fi
 say "1/3 Installing packages (a few minutes the first time)..."
 npm install --workspace @lettly/mobile
 
+# The app must load exactly one copy of React. Two copies (one at the top level, one
+# inside apps/mobile) make the installed app close as soon as it opens.
+react_copies() { find node_modules apps/mobile/node_modules -maxdepth 2 -name package.json -path '*/react/package.json' 2>/dev/null | wc -l | tr -d ' '; }
+if [ "$(react_copies)" != "1" ]; then
+  say "Found more than one copy of React. Reinstalling packages cleanly..."
+  rm -rf node_modules apps/mobile/node_modules package-lock.json
+  npm install --workspace @lettly/mobile
+  [ "$(react_copies)" = "1" ] || fail "There is still more than one copy of React installed. Send this message to Claude."
+fi
+
 cd apps/mobile
 say "2/3 Matching package versions to Expo SDK $SDK..."
 if [ "$SDK" != "54" ]; then
