@@ -1,11 +1,16 @@
-import { Redirect, Stack, usePathname } from 'expo-router';
+import { Stack } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { SessionProvider, useSession } from '../src/session';
 import { colors } from '../src/ui';
+import SignIn from './sign-in';
 
+/**
+ * Signed out: show the sign-in screen directly. Signed in: show the app's
+ * screens. Swapping what is rendered (rather than redirecting between routes)
+ * means there is no navigation step that can be dropped.
+ */
 function Screens() {
   const { identity } = useSession();
-  const pathname = usePathname();
 
   if (identity === undefined) {
     return (
@@ -14,8 +19,7 @@ function Screens() {
       </View>
     );
   }
-  if (identity === null && pathname !== '/sign-in') return <Redirect href="/sign-in" />;
-  if (identity && pathname === '/sign-in') return <Redirect href="/" />;
+  if (identity === null) return <SignIn />;
 
   return (
     <Stack screenOptions={{ headerTintColor: colors.brand, headerTitleStyle: { color: colors.ink } }}>
