@@ -14,19 +14,19 @@ import { complianceScore, generateRequirements, nextDue, statusOf, type Requirem
 import { COMPLIANCE_RULES } from './compliance/rules.ts';
 import { addDays, addMonths, today, type IsoDate } from './dates.ts';
 import { canTransition } from './maintenance.ts';
-import { STAFF_ONLY_DOCUMENT_TYPES, TENANT_DOCUMENT_TYPES } from './portfolio.ts';
+import { TENANT_DOCUMENT_TYPES } from './portfolio.ts';
 import { affordability } from './referencing/affordability.ts';
 import { arrears } from './rent/ledger.ts';
 import { generateSchedule } from './rent/schedule.ts';
-import { isStaff, type DocumentType, type Role } from './types.ts';
+import { isLandlord, type DocumentType, type Role } from './types.ts';
 
 /**
  * Demo mode: an in-memory stand-in for the API with sample data, so the apps
  * can be tried on a phone before the AWS backend is deployed.
  *
  * The data lives in memory for as long as the app stays open and is shared
- * between the demo roles, so you can report a repair as the tenant, sign out,
- * and handle it as agency staff. Nothing is saved or sent anywhere.
+ * between the two demo people, so you can report a repair as the tenant, switch
+ * person, and handle it as the landlord. Nothing is saved or sent anywhere.
  */
 interface DemoItem {
   id: string;
@@ -50,7 +50,6 @@ interface DemoStore {
   nextId: number;
 }
 
-const LANDLORD_ID = 'demo-landlord';
 const TENANT_PROPERTY_ID = 'demo-property-1';
 const TENANT_TENANCY_ID = 'demo-tenancy-1';
 
@@ -68,10 +67,10 @@ function hoursAgo(hours: number): string {
 function seed(): DemoStore {
   const now = today();
   const properties: PropertyDto[] = [
-    { id: TENANT_PROPERTY_ID, addressLine1: '14 Maple Road', addressLine2: null, town: 'Leeds', postcode: 'LS6 2AB', nation: 'england', landlordId: LANDLORD_ID, hasGas: true, isHmo: false },
-    { id: 'demo-property-2', addressLine1: 'Flat 3, 22 Harbour Street', addressLine2: null, town: 'Cardiff', postcode: 'CF10 5AA', nation: 'wales', landlordId: LANDLORD_ID, hasGas: true, isHmo: false },
-    { id: 'demo-property-3', addressLine1: '8 Glen View', addressLine2: null, town: 'Edinburgh', postcode: 'EH6 4QQ', nation: 'scotland', landlordId: null, hasGas: false, isHmo: true },
-    { id: 'demo-property-4', addressLine1: '5 Orchard Close', addressLine2: null, town: 'Bristol', postcode: 'BS7 8QT', nation: 'england', landlordId: LANDLORD_ID, hasGas: true, isHmo: false },
+    { id: TENANT_PROPERTY_ID, addressLine1: '14 Maple Road', addressLine2: null, town: 'Leeds', postcode: 'LS6 2AB', nation: 'england', hasGas: true, isHmo: false },
+    { id: 'demo-property-2', addressLine1: 'Flat 3, 22 Harbour Street', addressLine2: null, town: 'Cardiff', postcode: 'CF10 5AA', nation: 'wales', hasGas: true, isHmo: false },
+    { id: 'demo-property-3', addressLine1: '8 Glen View', addressLine2: null, town: 'Edinburgh', postcode: 'EH6 4QQ', nation: 'scotland', hasGas: false, isHmo: true },
+    { id: 'demo-property-4', addressLine1: '5 Orchard Close', addressLine2: null, town: 'Bristol', postcode: 'BS7 8QT', nation: 'england', hasGas: true, isHmo: false },
   ];
 
   // Months since each certificate was last done, chosen to show every status.
@@ -223,8 +222,8 @@ function seed(): DemoStore {
       photoDocumentIds: [],
       updates: [
         { id: 'demo-update-1', createdAt: hoursAgo(50), authorRole: 'tenant', status: 'reported', message: null },
-        { id: 'demo-update-2', createdAt: hoursAgo(46), authorRole: 'agency_staff', status: 'triaged', message: 'Thanks for reporting this. We are arranging a heating engineer.' },
-        { id: 'demo-update-3', createdAt: hoursAgo(30), authorRole: 'agency_staff', status: 'scheduled', message: 'An engineer is booked. Please make sure someone is home.' },
+        { id: 'demo-update-2', createdAt: hoursAgo(46), authorRole: 'landlord', status: 'triaged', message: 'Thanks for reporting this. I am arranging a heating engineer.' },
+        { id: 'demo-update-3', createdAt: hoursAgo(30), authorRole: 'landlord', status: 'scheduled', message: 'An engineer is booked. Please make sure someone is home.' },
       ],
     },
     {
@@ -241,8 +240,8 @@ function seed(): DemoStore {
       photoDocumentIds: [],
       updates: [
         { id: 'demo-update-4', createdAt: hoursAgo(24 * 9), authorRole: 'tenant', status: 'reported', message: null },
-        { id: 'demo-update-5', createdAt: hoursAgo(24 * 8), authorRole: 'agency_staff', status: 'triaged', message: null },
-        { id: 'demo-update-6', createdAt: hoursAgo(20), authorRole: 'agency_staff', status: 'completed', message: 'The electrician replaced the fan today. Please confirm it is working.' },
+        { id: 'demo-update-5', createdAt: hoursAgo(24 * 8), authorRole: 'landlord', status: 'triaged', message: null },
+        { id: 'demo-update-6', createdAt: hoursAgo(20), authorRole: 'landlord', status: 'completed', message: 'The electrician replaced the fan today. Please confirm it is working.' },
       ],
     },
     {
@@ -250,16 +249,15 @@ function seed(): DemoStore {
       propertyId: second.id,
       propertyAddress: address(second),
       title: 'Back fence panel blown down',
-      description: 'One fence panel came down in the wind. Quote received for replacement.',
+      description: 'One fence panel came down in the wind and is leaning into the neighbouring garden.',
       category: 'garden_exterior',
       urgency: 'routine',
-      status: 'awaiting_landlord_approval',
+      status: 'reported',
       reportedAt: hoursAgo(24 * 4),
       appointmentAt: null,
       photoDocumentIds: [],
       updates: [
-        { id: 'demo-update-7', createdAt: hoursAgo(24 * 4), authorRole: 'agency_staff', status: 'reported', message: null },
-        { id: 'demo-update-8', createdAt: hoursAgo(24 * 2), authorRole: 'agency_staff', status: 'awaiting_landlord_approval', message: 'Quote received: £180 to supply and fit one panel. Awaiting landlord approval.' },
+        { id: 'demo-update-7', createdAt: hoursAgo(24 * 4), authorRole: 'tenant', status: 'reported', message: null },
       ],
     },
   ];
@@ -279,13 +277,10 @@ export function resetDemo(): void {
 
 export function createDemoApi(role: Role): ApiClient {
   const s = demoStore();
-  const staff = isStaff(role);
+  const landlord = isLandlord(role);
 
-  const visibleProperties = (): PropertyDto[] => {
-    if (staff) return s.properties;
-    if (role === 'landlord') return s.properties.filter((p) => p.landlordId === LANDLORD_ID);
-    return s.properties.filter((p) => p.id === TENANT_PROPERTY_ID);
-  };
+  // The landlord sees the whole account; the tenant sees only their own home.
+  const visibleProperties = (): PropertyDto[] => (landlord ? s.properties : s.properties.filter((p) => p.id === TENANT_PROPERTY_ID));
   const canSee = (propertyId: string) => visibleProperties().some((p) => p.id === propertyId);
 
   const present = (item: DemoItem, onDate: IsoDate): { dto: ComplianceItemDto; state: RequirementState } | null => {
@@ -336,7 +331,7 @@ export function createDemoApi(role: Role): ApiClient {
     listProperties: async () => visibleProperties(),
 
     createProperty: async (input) => {
-      if (!staff) throw new ApiError(403, 'Only agency staff can do this');
+      if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
       const property: PropertyDto = { ...input, id: `demo-property-${(s.nextId += 1)}` };
       s.properties.push(property);
       for (const requirement of generateRequirements(
@@ -360,7 +355,7 @@ export function createDemoApi(role: Role): ApiClient {
     },
 
     completeComplianceItem: async (id, input) => {
-      if (!staff) throw new ApiError(403, 'Only agency staff can do this');
+      if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
       const item = s.items.find((i) => i.id === id);
       if (!item) throw new ApiError(404, 'Compliance item not found');
       item.completedOn = input.completedOn;
@@ -380,8 +375,10 @@ export function createDemoApi(role: Role): ApiClient {
     },
 
     reportMaintenance: async (input) => {
-      if (role === 'landlord') throw new ApiError(403, 'Landlords cannot report repairs here; contact the agency');
-      const property = s.properties.find((p) => p.id === TENANT_PROPERTY_ID)!;
+      // The landlord can log a repair for any tenancy; a tenant's goes against their own home.
+      const tenancy = landlord ? s.tenancies.find((t) => t.id === input.tenancyId) : s.tenancies.find((t) => t.id === TENANT_TENANCY_ID);
+      if (!tenancy) throw new ApiError(400, 'Choose the tenancy this repair is for');
+      const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
       const now = new Date().toISOString();
       const repair: DemoStore['repairs'][number] = {
         id: `demo-repair-${(s.nextId += 1)}`,
@@ -406,7 +403,7 @@ export function createDemoApi(role: Role): ApiClient {
       if (input.status && !canTransition(role, repair.status, input.status)) {
         throw new ApiError(409, `This request cannot be moved from "${repair.status}" to "${input.status}" by your account`);
       }
-      if (input.appointmentAt && !staff) throw new ApiError(403, 'Only agency staff can do this');
+      if (input.appointmentAt && !landlord) throw new ApiError(403, 'Only the landlord can do this');
       if (input.status) repair.status = input.status;
       if (input.appointmentAt) repair.appointmentAt = input.appointmentAt;
       repair.updates.push({
@@ -441,7 +438,7 @@ export function createDemoApi(role: Role): ApiClient {
     listDocuments: async () =>
       s.documents
         .filter((d) => d.propertyId !== null && canSee(d.propertyId))
-        .filter((d) => staff || (role === 'tenant' ? TENANT_DOCUMENT_TYPES.includes(d.type) : !STAFF_ONLY_DOCUMENT_TYPES.includes(d.type)))
+        .filter((d) => landlord || TENANT_DOCUMENT_TYPES.includes(d.type))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 
     listApplications: async () => {

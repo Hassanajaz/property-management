@@ -27,7 +27,7 @@ api.use('*', requireAuth);
 api.get('/me', async (c) => {
   const auth = c.get('auth');
   const [org] = await withOrg(auth.orgId, (tx) => tx.select().from(organisations).where(eq(organisations.id, auth.orgId)));
-  return c.json({ userId: auth.userId, email: auth.email, role: auth.role, organisation: org ? { id: org.id, name: org.name, kind: org.kind } : null });
+  return c.json({ userId: auth.userId, email: auth.email, role: auth.role, organisation: org ? { id: org.id, name: org.name } : null });
 });
 
 /** Registers this device for push notifications (repair updates, reminders). */

@@ -4,7 +4,7 @@ export interface AffordabilityInput {
   monthlyRentPence: number;
   /** Combined gross annual income of the applicants being assessed. */
   annualIncomePence: number;
-  /** Annual income required as a multiple of monthly rent. Agencies commonly use 30 (tenant) and 36 (guarantor). */
+  /** Annual income required as a multiple of monthly rent. Agents and landlords commonly use 30 (tenant) and 36 (guarantor). */
   multiplier?: number;
 }
 
@@ -35,7 +35,7 @@ export interface OfferTerms {
 /**
  * Warnings for offer terms that look inconsistent with the Renters' Rights Act
  * 2025 rules in England (in force from 1 May 2026). SEED LOGIC: confirm the
- * exact rules with a solicitor; this only flags the obvious cases for staff.
+ * exact rules with a solicitor; this only flags the obvious cases for the landlord.
  */
 export function offerWarnings(terms: OfferTerms): string[] {
   if (terms.nation !== 'england') return [];

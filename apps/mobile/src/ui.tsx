@@ -66,7 +66,6 @@ const STATUS_TONE: Record<ComplianceStatus | MaintenanceStatus, string> = {
   missing: colors.bad,
   reported: colors.warn,
   triaged: colors.warn,
-  awaiting_landlord_approval: colors.warn,
   scheduled: colors.brand,
   in_progress: colors.brand,
   completed: colors.good,

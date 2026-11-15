@@ -56,7 +56,7 @@ function deadlineDate(rule: ComplianceRule, subject: Subject): IsoDate | undefin
     : addDays(from, rule.recurrence.days);
 }
 
-/** The requirements to create when a property, tenancy, landlord or agency is added. */
+/** The requirements to create when a property, tenancy or landlord account is added. */
 export function generateRequirements(
   subject: Subject,
   onDate: IsoDate,

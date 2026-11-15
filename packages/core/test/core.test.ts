@@ -169,71 +169,84 @@ test('referencing: affordability and England offer warnings', () => {
   );
 });
 
-test('maintenance: each role can only make its own moves', () => {
-  assert.equal(canTransition('agency_staff', 'reported', 'triaged'), true);
+test('compliance: landlord account requirements follow the nation, with no agency rules left', () => {
+  assert.ok(!COMPLIANCE_RULES.some((r) => (r.scope as string) === 'agency'));
+  const ids = (nation: 'england' | 'wales' | 'scotland' | 'northern_ireland') =>
+    applicableRules({ nation, scope: 'landlord' }, '2026-11-12').map((r) => r.id);
+  for (const nation of ['england', 'wales', 'scotland', 'northern_ireland'] as const) assert.ok(ids(nation).includes('ico_registration'));
+  assert.ok(ids('wales').includes('landlord_registration.wales'));
+  assert.ok(ids('scotland').includes('landlord_registration.scotland'));
+});
+
+test('maintenance: the landlord runs the repair; the tenant confirms or reopens', () => {
+  assert.equal(canTransition('landlord', 'reported', 'triaged'), true);
+  assert.equal(canTransition('landlord', 'reported', 'scheduled'), true);
+  assert.equal(canTransition('landlord', 'scheduled', 'completed'), true);
+  assert.equal(canTransition('landlord', 'completed', 'confirmed'), false); // only the tenant confirms
+  assert.equal(canTransition('landlord', 'completed', 'reopened'), true);
+  assert.equal(canTransition('landlord', 'confirmed', 'reopened'), false);
   assert.equal(canTransition('tenant', 'reported', 'triaged'), false);
   assert.equal(canTransition('tenant', 'reported', 'cancelled'), true);
   assert.equal(canTransition('tenant', 'completed', 'confirmed'), true);
   assert.equal(canTransition('tenant', 'completed', 'reopened'), true);
-  assert.equal(canTransition('landlord', 'awaiting_landlord_approval', 'scheduled'), true);
-  assert.equal(canTransition('landlord', 'reported', 'triaged'), false);
-  assert.equal(canTransition('agency_owner', 'confirmed', 'reopened'), false);
+  assert.equal(canTransition('tenant', 'scheduled', 'completed'), false);
 });
 
 test('plans: property limits', () => {
-  const starter = planById('agency_starter')!;
-  assert.equal(canAddProperty(starter, 19), true);
-  assert.equal(canAddProperty(starter, 20), false);
-  assert.equal(smallestPlanFor('agency', 21)?.id, 'agency_growth');
-  assert.equal(smallestPlanFor('agency', 5000)?.id, 'agency_unlimited');
+  const solo = planById('solo')!;
+  assert.equal(canAddProperty(solo, 2), true);
+  assert.equal(canAddProperty(solo, 3), false);
+  assert.equal(smallestPlanFor(1)?.id, 'free');
+  assert.equal(smallestPlanFor(4)?.id, 'portfolio');
+  assert.equal(smallestPlanFor(5000)?.id, 'unlimited');
 });
 
-test('demo: each role sees only its own data and the repair flow works end to end', async () => {
+test('demo: the landlord sees the whole account and the tenant only their own home', async () => {
   const { createDemoApi, resetDemo } = await import('../src/index.ts');
   resetDemo();
   const tenant = createDemoApi('tenant');
-  const staff = createDemoApi('agency_staff');
   const landlord = createDemoApi('landlord');
 
   assert.equal((await tenant.listProperties()).length, 1);
-  assert.equal((await landlord.listProperties()).length, 3);
-  assert.equal((await staff.listProperties()).length, 4);
+  assert.equal((await landlord.listProperties()).length, 4);
   await assert.rejects(() => tenant.listCompliance());
+  await assert.rejects(() => tenant.listApplications());
+  await assert.rejects(() => tenant.createProperty({ addressLine1: 'x', addressLine2: null, town: 'y', postcode: 'AB1 2CD', nation: 'england', hasGas: true, isHmo: false }));
 
-  const compliance = await staff.listCompliance();
+  const compliance = await landlord.listCompliance();
   const statuses = new Set(compliance.items.map((i) => i.status));
   for (const status of ['valid', 'due_soon', 'overdue', 'missing']) assert.ok(statuses.has(status as never), `demo shows ${status}`);
   assert.ok(compliance.score > 0 && compliance.score < 100);
 
-  // Tenant reports, staff handle it, tenant confirms.
+  // Tenant reports, landlord handles it, tenant confirms.
   const created = await tenant.reportMaintenance({ title: 'Kitchen tap dripping', description: 'Drips constantly', category: 'plumbing', urgency: 'routine' });
-  assert.ok((await staff.listMaintenance()).some((r) => r.id === created.id));
-  assert.ok(!(await landlord.listMaintenance()).some((r) => r.id === 'does-not-exist'));
+  assert.ok((await landlord.listMaintenance()).some((r) => r.id === created.id));
   await assert.rejects(() => tenant.updateMaintenance(created.id, { status: 'triaged' }));
-  await staff.updateMaintenance(created.id, { status: 'triaged', message: 'Plumber being arranged' });
-  await staff.updateMaintenance(created.id, { status: 'scheduled', appointmentAt: new Date().toISOString() });
-  await staff.updateMaintenance(created.id, { status: 'completed' });
+  await landlord.updateMaintenance(created.id, { status: 'triaged', message: 'Plumber being arranged' });
+  await landlord.updateMaintenance(created.id, { status: 'scheduled', appointmentAt: new Date().toISOString() });
+  await landlord.updateMaintenance(created.id, { status: 'completed' });
+  await assert.rejects(() => landlord.updateMaintenance(created.id, { status: 'confirmed' }));
   await tenant.updateMaintenance(created.id, { status: 'confirmed' });
   const final = await tenant.getMaintenance(created.id);
   assert.equal(final.status, 'confirmed');
   assert.equal(final.updates?.length, 5);
 
-  // Landlord approves the quoted fence repair on their own property.
-  const fence = (await landlord.listMaintenance()).find((r) => r.status === 'awaiting_landlord_approval');
-  assert.ok(fence);
-  assert.equal((await landlord.updateMaintenance(fence.id, { status: 'scheduled' })).status, 'scheduled');
+  // The landlord can log a repair themselves, against a chosen tenancy.
+  await assert.rejects(() => landlord.reportMaintenance({ title: 'Gutter blocked', description: 'Overflowing', category: 'garden_exterior', urgency: 'routine' }));
+  const logged = await landlord.reportMaintenance({ tenancyId: 'demo-tenancy-2', title: 'Gutter blocked', description: 'Overflowing', category: 'garden_exterior', urgency: 'routine' });
+  assert.equal(logged.propertyId, 'demo-property-2');
+  assert.ok(!(await tenant.listMaintenance()).some((r) => r.id === logged.id));
 });
 
-test('demo: landlord sees rent, documents and applicants for their own properties only', async () => {
+test('demo: rent, documents and applicants', async () => {
   const { createDemoApi, resetDemo, portfolioSummary } = await import('../src/index.ts');
   resetDemo();
   const landlord = createDemoApi('landlord');
   const tenant = createDemoApi('tenant');
-  const staff = createDemoApi('agency_staff');
 
   const tenancies = await landlord.listTenancies();
-  assert.equal(tenancies.length, 2);
-  assert.equal((await staff.listTenancies()).length, 3);
+  assert.equal(tenancies.length, 3);
+  assert.equal((await tenant.listTenancies()).length, 1);
   const inArrears = tenancies.find((t) => t.id === 'demo-tenancy-2')!;
   assert.equal(inArrears.balancePence, 39500);
   assert.ok(inArrears.daysInArrears >= 7 && inArrears.daysInArrears <= 13, 'about ten days in arrears');
@@ -242,27 +255,25 @@ test('demo: landlord sees rent, documents and applicants for their own propertie
   const ledger = await landlord.getLedger('demo-tenancy-2');
   assert.ok(ledger.charges.length >= 15);
   assert.equal(ledger.summary.balancePence, 39500);
-  await assert.rejects(() => landlord.getLedger('demo-tenancy-3'));
   await assert.rejects(() => tenant.getLedger('demo-tenancy-2'));
   assert.equal((await tenant.getLedger('demo-tenancy-1')).summary.balancePence, 0);
 
-  // Landlords never see applicants' or tenants' personal documents.
+  // The landlord sees every document; the tenant sees only their own home's, and no personal evidence.
   const landlordDocs = await landlord.listDocuments();
-  assert.ok(landlordDocs.length > 0);
-  assert.ok(!landlordDocs.some((d) => d.type === 'right_to_rent_check'));
-  assert.ok((await staff.listDocuments()).some((d) => d.type === 'right_to_rent_check'));
-  assert.ok((await tenant.listDocuments()).every((d) => d.propertyId === 'demo-property-1'));
+  assert.ok(landlordDocs.some((d) => d.type === 'right_to_rent_check'));
+  const tenantDocs = await tenant.listDocuments();
+  assert.ok(tenantDocs.length > 0);
+  assert.ok(tenantDocs.every((d) => d.propertyId === 'demo-property-1' && d.type !== 'right_to_rent_check'));
 
   const before = landlordDocs.length;
   await landlord.requestUpload({ fileName: 'New gas record.jpg', contentType: 'image/jpeg', type: 'gas_safety_record', propertyId: 'demo-property-4' });
   assert.equal((await landlord.listDocuments()).length, before + 1);
-  await assert.rejects(() => landlord.requestUpload({ fileName: 'x.jpg', contentType: 'image/jpeg', type: 'other', propertyId: 'demo-property-3' }));
+  await assert.rejects(() => tenant.requestUpload({ fileName: 'x.jpg', contentType: 'image/jpeg', type: 'maintenance_photo', propertyId: 'demo-property-3' }));
 
   const applications = await landlord.listApplications();
   assert.equal(applications.length, 2);
   assert.equal(applications.find((a) => a.applicantName === 'Daniel Okafor')!.affordable, true);
   assert.equal(applications.find((a) => a.applicantName === 'Hannah Price')!.affordable, false);
-  await assert.rejects(() => tenant.listApplications());
 
   const summary = portfolioSummary({
     properties: await landlord.listProperties(),
@@ -271,13 +282,13 @@ test('demo: landlord sees rent, documents and applicants for their own propertie
     repairs: await landlord.listMaintenance(),
     applications,
   });
-  assert.equal(summary.properties, 3);
-  assert.equal(summary.let, 2);
+  assert.equal(summary.properties, 4);
+  assert.equal(summary.let, 3);
   assert.equal(summary.vacant, 1);
-  assert.equal(summary.monthlyRentPence, 204500);
+  assert.equal(summary.monthlyRentPence, 276500);
   assert.equal(summary.arrearsPence, 39500);
   assert.equal(summary.tenanciesInArrears, 1);
-  assert.equal(summary.approvalsNeeded, 1);
+  assert.equal(summary.repairsToReview, 1);
   assert.equal(summary.applicationsInProgress, 2);
   assert.ok(summary.complianceAttention > 0);
 });

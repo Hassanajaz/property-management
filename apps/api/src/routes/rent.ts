@@ -5,7 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { arrears, generateSchedule, today } from '@lettly/core';
 import { canSeeTenancy, visibilityFor } from '../access.ts';
-import { requireStaff, type AppEnv } from '../auth.ts';
+import { requireLandlord, type AppEnv } from '../auth.ts';
 import { db, withOrg } from '../db/client.ts';
 import { paymentConnections, payments, tenancies } from '../db/schema.ts';
 import { env } from '../env.ts';
@@ -45,7 +45,7 @@ const paymentInput = z.object({
 /** Records a payment received outside Direct Debit (standing order, cash, housing benefit). */
 rent.post('/tenancies/:id/payments', async (c) => {
   const auth = c.get('auth');
-  requireStaff(auth);
+  requireLandlord(auth);
   const input = paymentInput.parse(await c.req.json());
   const tenancyId = c.req.param('id');
 

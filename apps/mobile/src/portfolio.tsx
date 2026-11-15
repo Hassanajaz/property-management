@@ -12,6 +12,7 @@ import {
   TENANT_STATUS_LABEL,
   formatPence,
   portfolioSummary,
+  today,
   type ApplicationDto,
   type ComplianceItemDto,
   type ComplianceStatus,
@@ -36,7 +37,7 @@ export interface PortfolioData {
   applications: ApplicationDto[];
 }
 
-/** Loads everything a landlord or agency user can see, and reloads whenever the screen comes back into view. */
+/** Loads everything on the landlord's account, and reloads whenever the screen comes back into view. */
 export function usePortfolioData() {
   const { api } = useSession();
   const [data, setData] = useState<PortfolioData | null>(null);
@@ -77,8 +78,25 @@ export function scoreColor(score: number): string {
   return score >= 90 ? colors.good : score >= 70 ? colors.warn : colors.bad;
 }
 
-export function ComplianceCard({ item, showAddress = true }: { item: ComplianceItemDto; showAddress?: boolean }) {
+export function ComplianceCard({ item, showAddress = true, onChanged }: { item: ComplianceItemDto; showAddress?: boolean; onChanged?: () => void }) {
+  const { api } = useSession();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const due = item.expiresOn ?? item.dueDate;
+
+  async function recordDone() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.completeComplianceItem(item.id, { completedOn: today() });
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <View style={styles.card}>
       <StatusBadge status={item.upcoming ? 'confirmed' : item.status} label={item.upcoming ? 'Coming soon' : COMPLIANCE_LABEL[item.status]} />
@@ -89,6 +107,8 @@ export function ComplianceCard({ item, showAddress = true }: { item: ComplianceI
         {due ? ` · ${item.status === 'overdue' ? 'Was due' : 'Due'} ${due}` : ''}
         {item.severity === 'best_practice' ? ' · Best practice' : ''}
       </Text>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {onChanged && !item.upcoming && item.status !== 'valid' ? <Button title="Record as done today" kind="secondary" onPress={recordDone} busy={busy} /> : null}
     </View>
   );
 }
@@ -103,7 +123,7 @@ export function RepairCard({ repair, showAddress = true }: { repair: Maintenance
         Reported {new Date(repair.reportedAt).toLocaleDateString('en-GB')}
         {repair.urgency === 'emergency' ? ' · Emergency' : ''}
       </Text>
-      {repair.status === 'awaiting_landlord_approval' ? <Text style={[styles.body, { color: colors.warn }]}>Needs approval. Tap to review.</Text> : null}
+      {repair.status === 'reported' || repair.status === 'reopened' ? <Text style={[styles.body, { color: colors.warn }]}>Waiting for you. Tap to review.</Text> : null}
     </Pressable>
   );
 }
@@ -282,7 +302,7 @@ function Stat({ label, value, hint, tone, onPress }: { label: string; value: str
   );
 }
 
-/** Home screen for landlords and agency staff: the whole portfolio in sections. */
+/** The landlord's home screen: the whole portfolio in sections. */
 export function Portfolio() {
   const { identity, signOut, demo } = useSession();
   const { data, loading, error, load } = usePortfolioData();
@@ -292,7 +312,6 @@ export function Portfolio() {
   const letTo = useMemo(() => new Map((data?.tenancies ?? []).filter((t) => t.status === 'active').map((t) => [t.propertyId, t])), [data]);
 
   if (!identity) return null;
-  const landlord = identity.role === 'landlord';
 
   return (
     <View style={styles.page}>
@@ -305,7 +324,7 @@ export function Portfolio() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-        {demo ? <Text style={styles.muted}>Demo mode: sample data, nothing is saved. Signed in as {identity.role.replace('_', ' ')}.</Text> : null}
+        {demo ? <Text style={styles.muted}>Demo mode: sample data, nothing is saved. Signed in as the landlord.</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {data && summary && section === 'Overview' ? (
@@ -330,21 +349,21 @@ export function Portfolio() {
               <Stat
                 label="Open repairs"
                 value={String(summary.openRepairs)}
-                hint={summary.approvalsNeeded > 0 ? `${summary.approvalsNeeded} awaiting ${landlord ? 'your' : 'landlord'} approval` : 'None awaiting approval'}
-                tone={summary.approvalsNeeded > 0 ? colors.warn : undefined}
+                hint={summary.repairsToReview > 0 ? `${summary.repairsToReview} waiting for you` : 'None waiting for you'}
+                tone={summary.repairsToReview > 0 ? colors.warn : undefined}
                 onPress={() => setSection('Repairs')}
               />
               <Stat label="Applicants" value={String(summary.applicationsInProgress)} hint="Being referenced" onPress={() => setSection('Applicants')} />
             </View>
 
             <Text style={[styles.h2, { marginTop: 8 }]}>Needs attention</Text>
-            {data.repairs.filter((r) => r.status === 'awaiting_landlord_approval').map((r) => <RepairCard key={r.id} repair={r} />)}
+            {data.repairs.filter((r) => r.status === 'reported' || r.status === 'reopened').map((r) => <RepairCard key={r.id} repair={r} />)}
             {data.tenancies.filter((t) => t.balancePence > 0).map((t) => <TenancyCard key={t.id} tenancy={t} />)}
             {data.compliance
               .filter((i) => !i.upcoming && i.severity === 'statutory' && (i.status === 'overdue' || i.status === 'missing'))
               .slice(0, 6)
-              .map((i) => <ComplianceCard key={i.id} item={i} />)}
-            {summary.approvalsNeeded === 0 && summary.tenanciesInArrears === 0 && summary.complianceAttention === 0 ? <Text style={styles.muted}>Nothing needs attention right now.</Text> : null}
+              .map((i) => <ComplianceCard key={i.id} item={i} onChanged={load} />)}
+            {summary.repairsToReview === 0 && summary.tenanciesInArrears === 0 && summary.complianceAttention === 0 ? <Text style={styles.muted}>Nothing needs attention right now.</Text> : null}
           </>
         ) : null}
 
@@ -385,9 +404,9 @@ export function Portfolio() {
             <View style={styles.card}>
               <Text style={styles.muted}>Compliance score</Text>
               <Text style={[styles.h1, { color: scoreColor(data.complianceScore) }]}>{data.complianceScore} / 100</Text>
-              <Text style={styles.muted}>The share of legal requirements currently met across {landlord ? 'your' : 'all'} properties.</Text>
+              <Text style={styles.muted}>The share of legal requirements currently met across your properties and your own registrations.</Text>
             </View>
-            {data.compliance.map((i) => <ComplianceCard key={i.id} item={i} />)}
+            {data.compliance.map((i) => <ComplianceCard key={i.id} item={i} onChanged={load} />)}
           </>
         ) : null}
 
@@ -408,7 +427,7 @@ export function Portfolio() {
 
         {data && section === 'Applicants' ? (
           <>
-            <Text style={styles.muted}>People applying to rent {landlord ? 'your' : 'the'} properties, with the progress of their referencing checks. The agency makes the final referencing decision.</Text>
+            <Text style={styles.muted}>People applying to rent your properties, with the progress of their referencing checks.</Text>
             {data.applications.map((a) => <ApplicationCard key={a.id} application={a} />)}
             {data.applications.length === 0 ? <Text style={styles.muted}>No applicants at the moment.</Text> : null}
           </>

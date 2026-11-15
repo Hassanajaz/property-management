@@ -6,7 +6,7 @@ import { DocumentRow, Portfolio, RepairCard, TenancyCard } from '../src/portfoli
 import { useSession } from '../src/session';
 import { Button, styles } from '../src/ui';
 
-/** Landlords and agency staff get the portfolio dashboard; tenants get their own home screen. */
+/** The landlord gets the portfolio dashboard; a tenant gets their own home screen. */
 export default function Home() {
   const { identity } = useSession();
   if (!identity) return null;

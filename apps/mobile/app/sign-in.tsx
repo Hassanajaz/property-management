@@ -5,7 +5,7 @@ import { authConfig, useSession } from '../src/session';
 import { Button, styles } from '../src/ui';
 
 
-/** One sign-in for agency staff, landlords and tenants. */
+/** One sign-in for landlords and tenants. */
 export default function SignIn() {
   const { signedIn, demo, signInDemo } = useSession();
   const [email, setEmail] = useState('');
@@ -39,11 +39,10 @@ export default function SignIn() {
         <View style={styles.content}>
           <Text style={styles.h1}>Lettly demo</Text>
           <Text style={styles.muted}>
-            Sample data only: nothing is saved or sent. Choose who to sign in as. Report a repair as the tenant, then sign out and handle it as agency staff.
+            Sample data only: nothing is saved or sent. Choose who to sign in as. Report a repair as the tenant, then switch person and handle it as the landlord.
           </Text>
-          <Button title="Tenant" onPress={() => signInDemo('tenant')} />
-          <Button title="Agency staff" kind="secondary" onPress={() => signInDemo('agency_staff')} />
-          <Button title="Landlord" kind="secondary" onPress={() => signInDemo('landlord')} />
+          <Button title="Landlord" onPress={() => signInDemo('landlord')} />
+          <Button title="Tenant" kind="secondary" onPress={() => signInDemo('tenant')} />
         </View>
       </View>
     );
@@ -54,7 +53,7 @@ export default function SignIn() {
       <View style={styles.content}>
         <Text style={styles.h1}>{challenge ? 'Choose a password' : 'Sign in'}</Text>
         <Text style={styles.muted}>
-          {challenge ? 'This is your first sign-in. Choose a password of at least 10 characters with a number.' : 'Use the email address your letting agent has for you.'}
+          {challenge ? 'This is your first sign-in. Choose a password of at least 10 characters with a number.' : 'Use the email address on your account.'}
         </Text>
 
         {challenge ? (

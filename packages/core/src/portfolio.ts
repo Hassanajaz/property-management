@@ -2,7 +2,7 @@ import type { ApplicationDto, ApplicationStatus, CheckKind, CheckStatus, Complia
 import { monthlyEquivalentPence } from './rent/schedule.ts';
 import type { DocumentType } from './types.ts';
 
-/** Headline figures for a landlord's or agency's portfolio, worked out from the lists the API returns. */
+/** Headline figures for a landlord's portfolio, worked out from the lists the API returns. */
 export interface PortfolioSummary {
   properties: number;
   let: number;
@@ -13,7 +13,8 @@ export interface PortfolioSummary {
   tenanciesInArrears: number;
   complianceAttention: number;
   openRepairs: number;
-  approvalsNeeded: number;
+  /** Repairs waiting for the landlord to act: newly reported or reopened. */
+  repairsToReview: number;
   applicationsInProgress: number;
 }
 
@@ -36,7 +37,7 @@ export function portfolioSummary(input: {
     tenanciesInArrears: owing.length,
     complianceAttention: input.compliance.filter((i) => !i.upcoming && i.severity === 'statutory' && i.status !== 'valid').length,
     openRepairs: input.repairs.filter((r) => r.status !== 'confirmed' && r.status !== 'cancelled').length,
-    approvalsNeeded: input.repairs.filter((r) => r.status === 'awaiting_landlord_approval').length,
+    repairsToReview: input.repairs.filter((r) => r.status === 'reported' || r.status === 'reopened').length,
     applicationsInProgress: input.applications.filter((a) => a.status === 'invited' || a.status === 'submitted' || a.status === 'in_review').length,
   };
 }
@@ -54,8 +55,6 @@ export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
   tenancy_agreement: 'Tenancy agreement',
   written_statement: 'Written statement',
   landlord_registration: 'Landlord registration',
-  agent_licence: 'Agent licence',
-  scheme_membership: 'Scheme membership',
   ico_registration: 'ICO registration',
   inventory: 'Inventory',
   id_document: 'ID document',
@@ -66,11 +65,17 @@ export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
   other: 'Other document',
 };
 
-/** Document types a landlord may add for their own property. */
-export const LANDLORD_UPLOAD_TYPES: readonly DocumentType[] = ['gas_safety_record', 'eicr', 'epc', 'alarm_check', 'legionella_assessment', 'hmo_licence', 'landlord_registration', 'invoice', 'other'];
+/** Document types offered when a landlord adds a document from the app. */
+export const LANDLORD_UPLOAD_TYPES: readonly DocumentType[] = [
+  'gas_safety_record', 'eicr', 'epc', 'alarm_check', 'legionella_assessment', 'hmo_licence',
+  'tenancy_agreement', 'inventory', 'deposit_certificate', 'landlord_registration', 'invoice', 'other',
+];
 
-/** Personal documents about applicants and tenants that landlords never see. */
-export const STAFF_ONLY_DOCUMENT_TYPES: readonly DocumentType[] = ['id_document', 'income_evidence', 'reference', 'right_to_rent_check'];
+/**
+ * Personal documents about applicants and tenants. Only the landlord can open
+ * them, every view is logged, and they should be deleted once no longer needed.
+ */
+export const PERSONAL_DOCUMENT_TYPES: readonly DocumentType[] = ['id_document', 'income_evidence', 'reference', 'right_to_rent_check'];
 
 /** Document types a tenant may open for their own home. */
 export const TENANT_DOCUMENT_TYPES: readonly DocumentType[] = [

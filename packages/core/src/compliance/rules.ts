@@ -6,7 +6,7 @@ import type { ComplianceScope, DocumentType, Nation, SubjectFacts } from '../typ
  *
  * These rules were written from general knowledge of UK lettings law as a
  * starting point. Every rule, period and legal reference must be reviewed by a
- * lettings solicitor before the product is sold to other agencies. Local
+ * lettings solicitor before landlords rely on the product. Local
  * schemes (selective and additional licensing) are not included: add them per
  * council as rules with a `council` condition when that feature is built.
  *
@@ -397,61 +397,12 @@ export const COMPLIANCE_RULES: readonly ComplianceRule[] = [
     legalBasis: "Renters' Rights Act 2025, Part 2",
   },
 
-  // ------------------------------------------------------------------ agency
-  {
-    id: 'cmp_membership',
-    nations: GB,
-    scope: 'agency',
-    title: 'Client money protection scheme membership',
-    description: 'Agents holding client money must belong to an approved client money protection scheme.',
-    recurrence: { kind: 'interval', months: 12 },
-    evidence: 'scheme_membership',
-    severity: 'statutory',
-    status: 'in_force',
-    legalBasis: 'Client Money Protection Schemes for Property Agents Regulations 2019 (England); licence and code conditions in Wales and Scotland',
-  },
-  {
-    id: 'redress_scheme.england',
-    nations: ['england'],
-    scope: 'agency',
-    title: 'Redress scheme membership',
-    description: 'Letting and managing agents must belong to a government-approved redress scheme.',
-    recurrence: { kind: 'interval', months: 12 },
-    evidence: 'scheme_membership',
-    severity: 'statutory',
-    status: 'in_force',
-    legalBasis: 'Redress Schemes for Lettings Agency Work and Property Management Work Order 2014',
-  },
-  {
-    id: 'agent_licence.wales',
-    nations: ['wales'],
-    scope: 'agency',
-    title: 'Rent Smart Wales agent licence',
-    description: 'Agents letting or managing property in Wales must hold a licence; renew every 5 years.',
-    recurrence: { kind: 'interval', months: 60 },
-    evidence: 'agent_licence',
-    severity: 'statutory',
-    status: 'in_force',
-    legalBasis: 'Housing (Wales) Act 2014, Part 1',
-  },
-  {
-    id: 'letting_agent_register.scotland',
-    nations: ['scotland'],
-    scope: 'agency',
-    title: 'Scottish Letting Agent Register',
-    description: 'Letting agents must be on the register and follow the Letting Agent Code of Practice; renew every 3 years.',
-    recurrence: { kind: 'interval', months: 36 },
-    evidence: 'agent_licence',
-    severity: 'statutory',
-    status: 'in_force',
-    legalBasis: 'Housing (Scotland) Act 2014, Part 4',
-  },
   {
     id: 'ico_registration',
     nations: ALL,
-    scope: 'agency',
+    scope: 'landlord',
     title: 'ICO data protection fee',
-    description: 'Organisations processing personal data must pay the data protection fee to the ICO each year.',
+    description: 'Landlords who hold tenants\' personal data electronically must pay the data protection fee to the ICO each year.',
     recurrence: { kind: 'interval', months: 12 },
     evidence: 'ico_registration',
     severity: 'statutory',

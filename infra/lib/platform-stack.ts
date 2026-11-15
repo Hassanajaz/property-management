@@ -72,7 +72,7 @@ export class PlatformStack extends cdk.Stack {
 
     // -------------------------------------------------------------- sign-in
     const userPool = new cognito.UserPool(this, 'Users', {
-      selfSignUpEnabled: false, // people are invited by an agency
+      selfSignUpEnabled: false, // landlord accounts are created by you; tenants are invited by their landlord
       signInAliases: { email: true },
       signInCaseSensitive: false,
       customAttributes: {

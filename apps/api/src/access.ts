@@ -1,13 +1,13 @@
 import { eq } from 'drizzle-orm';
-import { isStaff } from '@lettly/core';
+import { isLandlord } from '@lettly/core';
 import type { AuthContext } from './auth.ts';
 import type { Tx } from './db/client.ts';
-import { properties, tenancies, tenancyTenants } from './db/schema.ts';
+import { tenancies, tenancyTenants } from './db/schema.ts';
 
 /**
- * What a signed-in person may see inside their organisation.
- * Staff see everything. A landlord sees their own properties. A tenant sees
- * only the tenancies they are on. `null` means "no restriction".
+ * What a signed-in person may see inside the account. The landlord sees
+ * everything. A tenant sees only the tenancies they are on. `null` means
+ * "no restriction".
  */
 export interface Visibility {
   propertyIds: string[] | null;
@@ -15,15 +15,7 @@ export interface Visibility {
 }
 
 export async function visibilityFor(tx: Tx, auth: AuthContext): Promise<Visibility> {
-  if (isStaff(auth.role)) return { propertyIds: null, tenancyIds: null };
-
-  if (auth.role === 'landlord') {
-    if (!auth.landlordId) return { propertyIds: [], tenancyIds: [] };
-    const owned = await tx.select({ id: properties.id }).from(properties).where(eq(properties.landlordId, auth.landlordId));
-    const propertyIds = owned.map((p) => p.id);
-    const all = await tx.select({ id: tenancies.id, propertyId: tenancies.propertyId }).from(tenancies);
-    return { propertyIds, tenancyIds: all.filter((t) => propertyIds.includes(t.propertyId)).map((t) => t.id) };
-  }
+  if (isLandlord(auth.role)) return { propertyIds: null, tenancyIds: null };
 
   // Tenant
   const mine = await tx

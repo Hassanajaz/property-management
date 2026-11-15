@@ -2,7 +2,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { eq } from 'drizzle-orm';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
-import { isStaff, type Role } from '@lettly/core';
+import { isLandlord, type Role } from '@lettly/core';
 import { withOrg } from './db/client.ts';
 import { users } from './db/schema.ts';
 import { env } from './env.ts';
@@ -12,8 +12,6 @@ export interface AuthContext {
   orgId: string;
   role: Role;
   email: string;
-  /** Set for landlord logins. */
-  landlordId: string | null;
 }
 
 export type AppEnv = { Variables: { auth: AuthContext } };
@@ -48,10 +46,10 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const [user] = await withOrg(orgId, (tx) => tx.select().from(users).where(eq(users.cognitoSub, sub)).limit(1));
   if (!user) throw new HTTPException(403, { message: 'Account not found' });
 
-  c.set('auth', { userId: user.id, orgId, role: user.role, email: user.email, landlordId: user.landlordId });
+  c.set('auth', { userId: user.id, orgId, role: user.role, email: user.email });
   await next();
 });
 
-export function requireStaff(auth: AuthContext): void {
-  if (!isStaff(auth.role)) throw new HTTPException(403, { message: 'Only agency staff can do this' });
+export function requireLandlord(auth: AuthContext): void {
+  if (!isLandlord(auth.role)) throw new HTTPException(403, { message: 'Only the landlord can do this' });
 }

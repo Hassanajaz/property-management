@@ -10,7 +10,8 @@ import type {
 } from '@lettly/core';
 
 /**
- * Every table except `organisations` and `payment_connections` carries
+ * An organisation is one landlord's account. Every table except
+ * `organisations` and `payment_connections` carries
  * `org_id` and is protected by row-level security (see scripts/migrate.ts).
  * Money is stored as whole pence. Calendar dates use `date`; moments use `timestamptz`.
  */
@@ -24,8 +25,7 @@ const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull(
 export const organisations = pgTable('organisations', {
   id: id(),
   name: text('name').notNull(),
-  kind: text('kind').$type<'agency' | 'landlord'>().notNull().default('agency'),
-  planId: text('plan_id').notNull().default('agency_starter'),
+  planId: text('plan_id').notNull().default('free'),
   stripeCustomerId: text('stripe_customer_id'),
   createdAt: createdAt(),
 });
@@ -50,8 +50,6 @@ export const users = pgTable(
     email: text('email').notNull(),
     name: text('name').notNull(),
     role: text('role').$type<Role>().notNull(),
-    /** Set for landlord logins: limits them to their own properties. */
-    landlordId: uuid('landlord_id').references(() => landlords.id),
     /** Expo push tokens for this person's devices. */
     pushTokens: jsonb('push_tokens').$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
@@ -59,26 +57,11 @@ export const users = pgTable(
   (t) => [uniqueIndex('users_cognito_sub_idx').on(t.cognitoSub), index('users_org_idx').on(t.orgId)],
 );
 
-export const landlords = pgTable(
-  'landlords',
-  {
-    id: id(),
-    orgId: orgId(),
-    name: text('name').notNull(),
-    email: text('email'),
-    phone: text('phone'),
-    address: text('address'),
-    createdAt: createdAt(),
-  },
-  (t) => [index('landlords_org_idx').on(t.orgId)],
-);
-
 export const properties = pgTable(
   'properties',
   {
     id: id(),
     orgId: orgId(),
-    landlordId: uuid('landlord_id').references(() => landlords.id),
     addressLine1: text('address_line1').notNull(),
     addressLine2: text('address_line2'),
     town: text('town').notNull(),
@@ -88,7 +71,7 @@ export const properties = pgTable(
     isHmo: boolean('is_hmo').notNull().default(false),
     createdAt: createdAt(),
   },
-  (t) => [index('properties_org_idx').on(t.orgId), index('properties_landlord_idx').on(t.landlordId)],
+  (t) => [index('properties_org_idx').on(t.orgId)],
 );
 
 export const tenancies = pgTable(
@@ -142,7 +125,6 @@ export const documents = pgTable(
     s3Key: text('s3_key').notNull(),
     propertyId: uuid('property_id').references(() => properties.id),
     tenancyId: uuid('tenancy_id').references(() => tenancies.id),
-    landlordId: uuid('landlord_id').references(() => landlords.id),
     uploadedBy: uuid('uploaded_by')
       .notNull()
       .references(() => users.id),
@@ -162,7 +144,6 @@ export const complianceItems = pgTable(
     ruleId: text('rule_id').notNull(),
     propertyId: uuid('property_id').references(() => properties.id),
     tenancyId: uuid('tenancy_id').references(() => tenancies.id),
-    landlordId: uuid('landlord_id').references(() => landlords.id),
     completedOn: date('completed_on'),
     expiresOn: date('expires_on'),
     dueDate: date('due_date'),
@@ -221,7 +202,7 @@ export const maintenanceRequests = pgTable(
     urgency: text('urgency').$type<MaintenanceUrgency>().notNull(),
     status: text('status').$type<MaintenanceStatus>().notNull().default('reported'),
     reportedAt: timestamp('reported_at', { withTimezone: true }).notNull().defaultNow(),
-    /** First time staff acted on the report; used for response-time reporting. */
+    /** First time the landlord acted on the report; used for response-time reporting. */
     firstResponseAt: timestamp('first_response_at', { withTimezone: true }),
     appointmentAt: timestamp('appointment_at', { withTimezone: true }),
     photoDocumentIds: jsonb('photo_document_ids').$type<string[]>().notNull().default([]),
@@ -231,7 +212,7 @@ export const maintenanceRequests = pgTable(
   (t) => [index('maintenance_org_idx').on(t.orgId), index('maintenance_tenancy_idx').on(t.tenancyId)],
 );
 
-/** Timeline of a maintenance request. `internal` notes are visible to staff only. */
+/** Timeline of a maintenance request. `internal` notes are the landlord's own and hidden from tenants. */
 export const maintenanceUpdates = pgTable(
   'maintenance_updates',
   {
@@ -298,7 +279,6 @@ export const auditLog = pgTable(
 /** Tables protected by row-level security on org_id. */
 export const ORG_SCOPED_TABLES = [
   users,
-  landlords,
   properties,
   tenancies,
   tenancyTenants,

@@ -4,7 +4,7 @@ import type { Role } from './types.ts';
  * Sign-in against Amazon Cognito using plain fetch, so the same code runs in
  * the web app and the Expo mobile app with no native modules.
  *
- * Staff, landlords and tenants all use this one sign-in. Invited users arrive
+ * Landlords and tenants use this one sign-in. Invited tenants arrive
  * with a temporary password and are asked to choose a new one.
  */
 export interface AuthConfig {

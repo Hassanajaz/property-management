@@ -1,9 +1,11 @@
 /**
- * Creates an organisation (an agency or a self-managing landlord) and its
- * owner's sign-in. Use this for your own agency and for early customers until
- * self-service sign-up is built.
+ * Creates a landlord's account and their sign-in. Use this for your own
+ * account and for early customers until self-service sign-up is built.
  *
- *   npm run org:create -- "Ajaz Lettings" owner@example.co.uk "Owner Name" agency
+ *   npm run org:create -- "Ajaz Lettings" you@example.co.uk "Your Name" england wales
+ *
+ * The nations listed (default: england) decide which landlord registration
+ * requirements are added to the account.
  *
  * Requires: DB_NAME, DB_CLUSTER_ARN, DB_ADMIN_SECRET_ARN, USER_POOL_ID and AWS credentials.
  */
@@ -19,9 +21,11 @@ function required(name: string): string {
   return value;
 }
 
-const [name, email, ownerName, kind = 'agency', ...nations] = process.argv.slice(2);
-if (!name || !email || !ownerName || (kind !== 'agency' && kind !== 'landlord')) {
-  console.error('Usage: npm run org:create -- "<organisation>" <owner email> "<owner name>" [agency|landlord] [england wales scotland northern_ireland]');
+const NATIONS: readonly Nation[] = ['england', 'wales', 'scotland', 'northern_ireland'];
+const [name, email, landlordName, ...nationArgs] = process.argv.slice(2);
+const nations = (nationArgs.length ? nationArgs : ['england']) as Nation[];
+if (!name || !email || !landlordName || nations.some((n) => !NATIONS.includes(n))) {
+  console.error('Usage: npm run org:create -- "<account name>" <landlord email> "<landlord name>" [england wales scotland northern_ireland]');
   process.exit(1);
 }
 
@@ -31,10 +35,7 @@ const db = drizzle(new RDSDataClient({}), {
   secretArn: required('DB_ADMIN_SECRET_ARN'),
 });
 
-const [org] = await db
-  .insert(organisations)
-  .values({ name, kind, planId: kind === 'agency' ? 'agency_starter' : 'landlord_solo' })
-  .returning();
+const [org] = await db.insert(organisations).values({ name, planId: 'solo' }).returning();
 
 const created = await new CognitoIdentityProviderClient({}).send(
   new AdminCreateUserCommand({
@@ -44,26 +45,24 @@ const created = await new CognitoIdentityProviderClient({}).send(
     UserAttributes: [
       { Name: 'email', Value: email },
       { Name: 'email_verified', Value: 'true' },
-      { Name: 'name', Value: ownerName },
+      { Name: 'name', Value: landlordName },
       { Name: 'custom:org_id', Value: org!.id },
-      { Name: 'custom:role', Value: 'agency_owner' },
+      { Name: 'custom:role', Value: 'landlord' },
     ],
   }),
 );
 const sub = created.User?.Attributes?.find((a) => a.Name === 'sub')?.Value;
 if (!sub) throw new Error('Cognito did not return a user id');
 
-await db.insert(users).values({ orgId: org!.id, cognitoSub: sub, email, name: ownerName, role: 'agency_owner' });
+await db.insert(users).values({ orgId: org!.id, cognitoSub: sub, email, name: landlordName, role: 'landlord' });
 
-// The agency's own obligations (scheme memberships, licences, ICO fee) for each nation it works in.
-if (kind === 'agency') {
-  const ruleIds = new Set<string>();
-  for (const nation of (nations.length ? nations : ['england']) as Nation[]) {
-    for (const r of generateRequirements({ nation, scope: 'agency' }, today())) ruleIds.add(r.ruleId);
-  }
-  if (ruleIds.size > 0) {
-    await db.insert(complianceItems).values([...ruleIds].map((ruleId) => ({ orgId: org!.id, ruleId })));
-  }
+// The landlord's own obligations (registration schemes, ICO fee) for each nation they let in.
+const ruleIds = new Set<string>();
+for (const nation of nations) {
+  for (const r of generateRequirements({ nation, scope: 'landlord' }, today())) ruleIds.add(r.ruleId);
+}
+if (ruleIds.size > 0) {
+  await db.insert(complianceItems).values([...ruleIds].map((ruleId) => ({ orgId: org!.id, ruleId })));
 }
 
-console.log(`Created ${kind} "${name}" (${org!.id}). ${email} has been emailed a temporary password.`);
+console.log(`Created account "${name}" (${org!.id}). ${email} has been emailed a temporary password.`);

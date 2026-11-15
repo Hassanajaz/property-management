@@ -1,8 +1,9 @@
 # Lettly (working name)
 
-UK lettings platform: compliance, rent, referencing, documents and maintenance,
-for letting agencies and self-managing landlords. One sign-in for agency staff,
-landlords and tenants, on web and mobile.
+UK lettings platform for landlords: compliance, rent, referencing, documents and
+maintenance. There are two kinds of login only: a landlord, who owns the account
+and manages everything in it, and the tenants they invite. There is no agency
+or staff role. Web and mobile.
 
 The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
@@ -10,7 +11,7 @@ The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
 | Folder | What it is | State |
 | --- | --- | --- |
-| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (21 tests) and type-checked |
+| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (22 tests) and type-checked |
 | `apps/api` | API (Hono on AWS Lambda), database schema (Drizzle, PostgreSQL), row-level security, invites, maintenance, documents, rent ledger, GoCardless webhook | Written, **not yet run** |
 | `apps/web` | Web app (React, Vite): sign-in, compliance table, repairs, add property | Written, **not yet run** |
 | `apps/mobile` | iOS and Android app (Expo): sign-in, home, report a repair with photos, repair timeline | Written, **not yet run** |
@@ -43,12 +44,12 @@ the same Wi-Fi. The project targets Expo SDK 54, the version the App Store
 Expo Go supported when this was written. If Expo Go reports that the project
 is incompatible, run `EXPO_SDK=58 ./run-on-iphone.sh expo-go`.
 
-In the app, choose Tenant, Agency staff or Landlord. The landlord (and staff) home is a
+In the app, choose Landlord or Tenant. The landlord home is a
 portfolio dashboard with sections for properties, rent, compliance, repairs,
 documents and applicants; tap a property for everything about it, or a tenancy
 for its rent statement. Data is shared between
-the three while the app stays open: report a repair as the tenant, tap
-"Switch person", and handle it as agency staff.
+the two while the app stays open: report a repair as the tenant, tap
+"Switch person", and handle it as the landlord.
 
 This script has not been run by its author: package installs were blocked
 where the code was written. Send any error it prints and it can be fixed.
@@ -60,7 +61,7 @@ sign-up credits still apply).
 
 ```bash
 npm install
-npm test                # shared rules: should print 21 passing tests
+npm test                # shared rules: should print 22 passing tests
 npm run typecheck       # fix anything reported before going further
 
 ```
@@ -79,7 +80,7 @@ Then, with the outputs exported in your shell (see `.env.example`):
 cd apps/api
 npm run db:generate      # writes SQL migrations from the schema
 npm run db:migrate       # applies them and turns on row-level security
-npm run org:create -- "Your Agency" you@example.co.uk "Your Name" agency england
+npm run org:create -- "Your Lettings" you@example.co.uk "Your Name" england
 ```
 
 You receive an email with a temporary password. The database pauses when idle,
@@ -98,21 +99,21 @@ npm run dev:mobile                    # scan the QR code with Expo Go on your iP
 
 ## How the logins work
 
-- Staff create a tenancy with its tenants, then invite each tenant
-  (`POST /tenants/:id/invite`). Landlords are invited the same way
-  (`POST /landlords/:id/invite`).
-- The invite creates a Cognito user whose organisation and role are set by the
-  API and cannot be changed by the user.
-- Tenants see only their own tenancy; landlords see only their own properties;
-  the database additionally refuses rows from any other organisation.
-- Tenants report a repair with photos; staff triage, book and complete it;
-  each update emails the tenant (and sends a push notification once the app
-  registers push tokens); the tenant confirms the fix or reopens it.
+- A landlord account is created with `npm run org:create` (self-service sign-up
+  comes later). The landlord sees and manages everything on their account.
+- The landlord creates a tenancy with its tenants, then invites each tenant
+  (`POST /tenants/:id/invite`). The invite creates a sign-in whose account and
+  role are set by the API and cannot be changed by the user.
+- A tenant sees only their own tenancy: rent, documents and repairs. The
+  database additionally refuses rows from any other landlord's account.
+- A tenant reports a repair with photos; the landlord reviews, books and
+  completes it; each update emails the tenant (and sends a push notification
+  once the app registers push tokens); the tenant confirms the fix or reopens it.
 
 ## Known gaps (next work, in order)
 
 1. Install, type-check and deploy; fix what the first run shows.
-2. Web screens for landlords, tenancies and invites (the API routes exist).
+2. Screens for adding tenancies and inviting tenants (the API routes exist).
 3. Email sending needs a verified SES sender: pass `-c emailFrom=...` on deploy.
 4. Push notifications: add `expo-notifications` and call `api.registerPushToken`.
 5. Rent: GoCardless mandates and payment creation (webhook handling exists but

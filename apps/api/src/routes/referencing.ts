@@ -9,8 +9,7 @@ import { properties, referencingApplications, referencingChecks } from '../db/sc
 export const referencing = new Hono<AppEnv>();
 
 /**
- * Applicants and the progress of their checks. Staff see all; landlords see
- * applicants for their own properties (outcomes only, never the evidence).
+ * Applicants and the progress of their checks, for the landlord only.
  * Creating applications and recording checks is the next piece of referencing work.
  */
 referencing.get('/referencing/applications', async (c) => {

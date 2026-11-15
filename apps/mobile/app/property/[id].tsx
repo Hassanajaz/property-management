@@ -55,7 +55,7 @@ export default function Property() {
           {applications.map((a) => <ApplicationCard key={a.id} application={a} showAddress={false} />)}
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Compliance</Text>
-          {compliance.map((i) => <ComplianceCard key={i.id} item={i} showAddress={false} />)}
+          {compliance.map((i) => <ComplianceCard key={i.id} item={i} showAddress={false} onChanged={load} />)}
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Repairs</Text>
           {repairs.length === 0 ? <Text style={styles.muted}>No repairs reported.</Text> : null}

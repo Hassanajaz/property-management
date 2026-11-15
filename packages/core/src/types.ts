@@ -2,17 +2,18 @@ import type { IsoDate } from './dates.ts';
 
 export type Nation = 'england' | 'wales' | 'scotland' | 'northern_ireland';
 
-/** Who is signed in. One login screen; the role decides what the person sees. */
-export type Role = 'agency_owner' | 'agency_staff' | 'landlord' | 'tenant';
+/**
+ * Who is signed in. There are only two kinds of account: a landlord, who owns
+ * the account and manages everything in it, and the tenants they invite.
+ */
+export type Role = 'landlord' | 'tenant';
 
-export const STAFF_ROLES: readonly Role[] = ['agency_owner', 'agency_staff'];
-
-export function isStaff(role: Role): boolean {
-  return STAFF_ROLES.includes(role);
+export function isLandlord(role: Role): boolean {
+  return role === 'landlord';
 }
 
 /** What a compliance requirement is attached to. */
-export type ComplianceScope = 'property' | 'tenancy' | 'landlord' | 'agency';
+export type ComplianceScope = 'property' | 'tenancy' | 'landlord';
 
 export type DocumentType =
   | 'gas_safety_record'
@@ -27,8 +28,6 @@ export type DocumentType =
   | 'tenancy_agreement'
   | 'written_statement'
   | 'landlord_registration'
-  | 'agent_licence'
-  | 'scheme_membership'
   | 'ico_registration'
   | 'inventory'
   | 'id_document'
@@ -87,7 +86,6 @@ export type MaintenanceUrgency = 'emergency' | 'urgent' | 'routine';
 export type MaintenanceStatus =
   | 'reported'
   | 'triaged'
-  | 'awaiting_landlord_approval'
   | 'scheduled'
   | 'in_progress'
   | 'completed'

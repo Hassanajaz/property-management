@@ -4,7 +4,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { COMPLIANCE_RULES, complianceScore, nextDue, statusOf, today, type RequirementState } from '@lettly/core';
 import { canSeeProperty, formatAddress, visibilityFor } from '../access.ts';
-import { requireStaff, type AppEnv } from '../auth.ts';
+import { requireLandlord, type AppEnv } from '../auth.ts';
 import { withOrg } from '../db/client.ts';
 import { complianceItems, properties } from '../db/schema.ts';
 import { audit } from './portfolio.ts';
@@ -44,7 +44,7 @@ function present(item: ItemRow, address: string | null, onDate: string) {
   };
 }
 
-/** Staff see every item; landlords see items for their own properties. */
+/** Every requirement on the landlord's account, with its current status and the overall score. */
 compliance.get('/compliance', async (c) => {
   const auth = c.get('auth');
   if (auth.role === 'tenant') throw new HTTPException(403, { message: 'Not available for tenant accounts' });
@@ -75,7 +75,7 @@ const completeInput = z.object({
 /** Records that a requirement has been met, with the certificate as evidence. */
 compliance.post('/compliance/:id/complete', async (c) => {
   const auth = c.get('auth');
-  requireStaff(auth);
+  requireLandlord(auth);
   const input = completeInput.parse(await c.req.json());
   const itemId = c.req.param('id');
 

@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { LANDLORD_UPLOAD_TYPES, STAFF_ONLY_DOCUMENT_TYPES, TENANT_DOCUMENT_TYPES, isStaff, type DocumentType } from '@lettly/core';
+import { PERSONAL_DOCUMENT_TYPES, TENANT_DOCUMENT_TYPES, isLandlord, type DocumentType } from '@lettly/core';
 import { canSeeProperty, canSeeTenancy, formatAddress, visibilityFor } from '../access.ts';
 import type { AppEnv } from '../auth.ts';
 import { withOrg } from '../db/client.ts';
@@ -19,7 +19,6 @@ export const documentRoutes = new Hono<AppEnv>();
 const LINK_SECONDS = 300;
 
 const TENANT_VISIBLE = TENANT_DOCUMENT_TYPES;
-const STAFF_ONLY = STAFF_ONLY_DOCUMENT_TYPES;
 
 const uploadInput = z.object({
   fileName: z.string().min(1).max(200),
@@ -36,13 +35,9 @@ const uploadInput = z.object({
 documentRoutes.post('/documents/upload-url', async (c) => {
   const auth = c.get('auth');
   const input = uploadInput.parse(await c.req.json());
-  // Staff can add anything. Tenants can add repair photos. Landlords can add
-  // certificates and similar documents, and only to one of their own properties.
-  if (auth.role === 'tenant' && input.type !== 'maintenance_photo') {
+  // The landlord can add any document. Tenants can add repair photos only.
+  if (!isLandlord(auth.role) && input.type !== 'maintenance_photo') {
     throw new HTTPException(403, { message: 'You can only upload photos for a repair report' });
-  }
-  if (auth.role === 'landlord' && (!LANDLORD_UPLOAD_TYPES.includes(input.type) || !input.propertyId)) {
-    throw new HTTPException(403, { message: 'Choose one of your properties and a certificate type' });
   }
 
   const documentId = randomUUID();
@@ -84,10 +79,10 @@ documentRoutes.get('/documents', async (c) => {
     const addresses = new Map(props.map((p) => [p.id, formatAddress(p)]));
     return all
       .filter((d) => {
-        if (isStaff(auth.role)) return true;
+        if (isLandlord(auth.role)) return true;
         if (d.uploadedBy === auth.userId) return true;
         const inScope = (d.tenancyId !== null && canSeeTenancy(v, d.tenancyId)) || (d.propertyId !== null && canSeeProperty(v, d.propertyId));
-        return inScope && (auth.role === 'tenant' ? TENANT_VISIBLE.includes(d.type) : !STAFF_ONLY.includes(d.type));
+        return inScope && TENANT_VISIBLE.includes(d.type);
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .map((d) => ({
@@ -110,18 +105,16 @@ documentRoutes.get('/documents/:id/download-url', async (c) => {
     const [row] = await tx.select().from(documents).where(eq(documents.id, c.req.param('id')));
     if (!row) throw new HTTPException(404, { message: 'Document not found' });
 
-    let allowed = isStaff(auth.role) || row.uploadedBy === auth.userId;
+    let allowed = isLandlord(auth.role) || row.uploadedBy === auth.userId;
     if (!allowed) {
       const v = await visibilityFor(tx, auth);
       const inScope = (row.tenancyId !== null && canSeeTenancy(v, row.tenancyId)) || (row.propertyId !== null && canSeeProperty(v, row.propertyId));
-      allowed =
-        inScope &&
-        (auth.role === 'tenant' ? TENANT_VISIBLE.includes(row.type) : !STAFF_ONLY.includes(row.type));
+      allowed = inScope && TENANT_VISIBLE.includes(row.type);
     }
     if (!allowed) throw new HTTPException(404, { message: 'Document not found' });
 
     // Every view of a personal document is recorded.
-    if (STAFF_ONLY.includes(row.type)) await audit(tx, auth, 'document.viewed', 'document', row.id);
+    if (PERSONAL_DOCUMENT_TYPES.includes(row.type)) await audit(tx, auth, 'document.viewed', 'document', row.id);
     return row;
   });
 

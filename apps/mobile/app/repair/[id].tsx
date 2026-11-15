@@ -1,17 +1,17 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { TENANT_STATUS_LABEL, canTransition, isStaff, type MaintenanceRequestDto, type MaintenanceStatus } from '@lettly/core';
+import { TENANT_STATUS_LABEL, canTransition, isLandlord, type MaintenanceRequestDto, type MaintenanceStatus } from '@lettly/core';
 import { useSession } from '../../src/session';
 import { Button, StatusBadge, styles } from '../../src/ui';
 
-/** Steps agency staff can take, in workflow order. Only the ones allowed from the current status are shown. */
-const STAFF_STEPS: { to: MaintenanceStatus; label: string }[] = [
+/** Steps the landlord can take, in workflow order. Only the ones allowed from the current status are shown. */
+const LANDLORD_STEPS: { to: MaintenanceStatus; label: string }[] = [
   { to: 'triaged', label: 'Mark as reviewed' },
-  { to: 'awaiting_landlord_approval', label: 'Ask landlord to approve' },
   { to: 'scheduled', label: 'Book visit for tomorrow, 10am' },
   { to: 'in_progress', label: 'Work has started' },
   { to: 'completed', label: 'Mark repair as done' },
+  { to: 'reopened', label: 'Reopen this repair' },
   { to: 'cancelled', label: 'Cancel request' },
 ];
 
@@ -22,9 +22,9 @@ function tomorrowAtTen(): string {
   return date.toISOString();
 }
 
-const ROLE_LABEL: Record<string, string> = { tenant: 'Tenant', landlord: 'Landlord', agency_staff: 'Agency', agency_owner: 'Agency' };
+const ROLE_LABEL: Record<string, string> = { tenant: 'Tenant', landlord: 'Landlord' };
 
-/** A repair and its timeline. Tenants can add a message, confirm the fix or reopen it. */
+/** A repair and its timeline. The landlord moves it along; the tenant confirms the fix or reopens it. */
 export default function Repair() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api, identity } = useSession();
@@ -83,7 +83,7 @@ export default function Repair() {
             {repair.photoDocumentIds.length > 0 ? <Text style={styles.muted}>{repair.photoDocumentIds.length} photo(s) attached</Text> : null}
           </View>
 
-          {can('confirmed') || can('reopened') ? (
+          {role === 'tenant' && (can('confirmed') || can('reopened')) ? (
             <View style={styles.card}>
               <Text style={styles.h2}>Has this been fixed?</Text>
               <Button title="Yes, it is fixed" onPress={() => send({ status: 'confirmed' })} busy={busy} />
@@ -91,22 +91,14 @@ export default function Repair() {
             </View>
           ) : null}
 
-          {can('scheduled') && role === 'landlord' ? (
-            <View style={styles.card}>
-              <Text style={styles.h2}>Your approval is needed</Text>
-              <Button title="Approve the work" onPress={() => send({ status: 'scheduled' })} busy={busy} />
-              <Button title="Send back to the agency" kind="secondary" onPress={() => send({ status: 'triaged', message: message || undefined })} busy={busy} />
-            </View>
-          ) : null}
-
-          {role && isStaff(role) && STAFF_STEPS.some((step) => can(step.to)) ? (
+          {role && isLandlord(role) && LANDLORD_STEPS.some((step) => can(step.to)) ? (
             <View style={styles.card}>
               <Text style={styles.h2}>Next step</Text>
-              {STAFF_STEPS.filter((step) => can(step.to)).map((step) => (
+              {LANDLORD_STEPS.filter((step) => can(step.to)).map((step) => (
                 <Button
                   key={step.to}
                   title={step.label}
-                  kind={step.to === 'cancelled' ? 'secondary' : 'primary'}
+                  kind={step.to === 'cancelled' || step.to === 'reopened' ? 'secondary' : 'primary'}
                   busy={busy}
                   onPress={() => send({ status: step.to, message: message.trim() || undefined, appointmentAt: step.to === 'scheduled' ? tomorrowAtTen() : undefined })}
                 />

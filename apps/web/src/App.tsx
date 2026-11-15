@@ -4,7 +4,7 @@ import {
   canTransition,
   createApiClient,
   identityFrom,
-  isStaff,
+  isLandlord,
   refresh,
   setNewPassword,
   signIn,
@@ -87,7 +87,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
     <main className="signin">
       <form onSubmit={submit} className="card">
         <h1>{challenge ? 'Choose a password' : 'Sign in'}</h1>
-        <p className="muted">{challenge ? 'First sign-in: choose a password of at least 10 characters with a number.' : 'For agency staff, landlords and tenants.'}</p>
+        <p className="muted">{challenge ? 'First sign-in: choose a password of at least 10 characters with a number.' : 'For landlords and tenants.'}</p>
         {!challenge && (
           <label>
             Email
@@ -108,7 +108,7 @@ function SignIn({ onSignedIn }: { onSignedIn: (session: Session) => void }) {
 // ----------------------------------------------------------------- workspace
 function Workspace({ session, setSession }: { session: Session; setSession: (s: Session | null) => void }) {
   const identity: Identity = useMemo(() => identityFrom(session), [session]);
-  const staff = isStaff(identity.role);
+  const landlord = isLandlord(identity.role);
   const tenant = identity.role === 'tenant';
 
   const api = useMemo(() => {
@@ -175,7 +175,7 @@ function Workspace({ session, setSession }: { session: Session; setSession: (s: 
             <h2>Compliance <span className={`score ${compliance.score >= 90 ? 'good' : compliance.score >= 70 ? 'warn' : 'bad'}`}>{compliance.score} / 100</span></h2>
             <table>
               <thead>
-                <tr><th>Status</th><th>Requirement</th><th>Property</th><th>Due</th>{staff && <th />}</tr>
+                <tr><th>Status</th><th>Requirement</th><th>Property</th><th>Due</th>{landlord && <th />}</tr>
               </thead>
               <tbody>
                 {compliance.items.map((item) => (
@@ -184,7 +184,7 @@ function Workspace({ session, setSession }: { session: Session; setSession: (s: 
                     <td>{item.title}{item.severity === 'best_practice' && <span className="muted"> (best practice)</span>}</td>
                     <td>{item.propertyAddress ?? '—'}</td>
                     <td>{item.expiresOn ?? item.dueDate ?? '—'}</td>
-                    {staff && (
+                    {landlord && (
                       <td>
                         <button
                           onClick={() => {
@@ -238,7 +238,7 @@ function Workspace({ session, setSession }: { session: Session; setSession: (s: 
           </table>
         </section>
 
-        {staff && (
+        {landlord && (
           <section>
             <h2>Properties ({properties.length})</h2>
             <PropertyForm onSubmit={(input) => act(() => api.createProperty(input))} />
@@ -256,8 +256,7 @@ function Workspace({ session, setSession }: { session: Session; setSession: (s: 
 
 const NEXT_STEPS: { to: MaintenanceStatus; label: string }[] = [
   { to: 'triaged', label: 'Mark reviewed' },
-  { to: 'awaiting_landlord_approval', label: 'Ask landlord' },
-  { to: 'scheduled', label: 'Approve / book' },
+  { to: 'scheduled', label: 'Book visit' },
   { to: 'in_progress', label: 'Start work' },
   { to: 'completed', label: 'Mark done' },
   { to: 'confirmed', label: 'Confirm fixed' },
@@ -316,7 +315,7 @@ function PropertyForm({ onSubmit }: { onSubmit: (input: Omit<PropertyDto, 'id'>)
       className="inline"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit({ addressLine1, addressLine2: null, town, postcode, nation, landlordId: null, hasGas, isHmo });
+        onSubmit({ addressLine1, addressLine2: null, town, postcode, nation, hasGas, isHmo });
         setAddressLine1('');
         setTown('');
         setPostcode('');

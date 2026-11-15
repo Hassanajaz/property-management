@@ -19,7 +19,6 @@ export interface PropertyDto {
   town: string;
   postcode: string;
   nation: Nation;
-  landlordId: string | null;
   hasGas: boolean;
   isHmo: boolean;
 }
@@ -64,7 +63,7 @@ export interface MaintenanceRequestDto {
 }
 
 export interface NewMaintenanceRequest {
-  /** Staff must say which tenancy; a tenant's own tenancy is used automatically. */
+  /** The landlord must say which tenancy; a tenant's own tenancy is used automatically. */
   tenancyId?: string;
   title: string;
   description: string;
