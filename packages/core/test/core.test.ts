@@ -196,8 +196,8 @@ test('demo: each role sees only its own data and the repair flow works end to en
   const landlord = createDemoApi('landlord');
 
   assert.equal((await tenant.listProperties()).length, 1);
-  assert.equal((await landlord.listProperties()).length, 2);
-  assert.equal((await staff.listProperties()).length, 3);
+  assert.equal((await landlord.listProperties()).length, 3);
+  assert.equal((await staff.listProperties()).length, 4);
   await assert.rejects(() => tenant.listCompliance());
 
   const compliance = await staff.listCompliance();
@@ -222,4 +222,62 @@ test('demo: each role sees only its own data and the repair flow works end to en
   const fence = (await landlord.listMaintenance()).find((r) => r.status === 'awaiting_landlord_approval');
   assert.ok(fence);
   assert.equal((await landlord.updateMaintenance(fence.id, { status: 'scheduled' })).status, 'scheduled');
+});
+
+test('demo: landlord sees rent, documents and applicants for their own properties only', async () => {
+  const { createDemoApi, resetDemo, portfolioSummary } = await import('../src/index.ts');
+  resetDemo();
+  const landlord = createDemoApi('landlord');
+  const tenant = createDemoApi('tenant');
+  const staff = createDemoApi('agency_staff');
+
+  const tenancies = await landlord.listTenancies();
+  assert.equal(tenancies.length, 2);
+  assert.equal((await staff.listTenancies()).length, 3);
+  const inArrears = tenancies.find((t) => t.id === 'demo-tenancy-2')!;
+  assert.equal(inArrears.balancePence, 39500);
+  assert.ok(inArrears.daysInArrears >= 7 && inArrears.daysInArrears <= 13, 'about ten days in arrears');
+  assert.equal(tenancies.find((t) => t.id === 'demo-tenancy-1')!.balancePence, 0);
+
+  const ledger = await landlord.getLedger('demo-tenancy-2');
+  assert.ok(ledger.charges.length >= 15);
+  assert.equal(ledger.summary.balancePence, 39500);
+  await assert.rejects(() => landlord.getLedger('demo-tenancy-3'));
+  await assert.rejects(() => tenant.getLedger('demo-tenancy-2'));
+  assert.equal((await tenant.getLedger('demo-tenancy-1')).summary.balancePence, 0);
+
+  // Landlords never see applicants' or tenants' personal documents.
+  const landlordDocs = await landlord.listDocuments();
+  assert.ok(landlordDocs.length > 0);
+  assert.ok(!landlordDocs.some((d) => d.type === 'right_to_rent_check'));
+  assert.ok((await staff.listDocuments()).some((d) => d.type === 'right_to_rent_check'));
+  assert.ok((await tenant.listDocuments()).every((d) => d.propertyId === 'demo-property-1'));
+
+  const before = landlordDocs.length;
+  await landlord.requestUpload({ fileName: 'New gas record.jpg', contentType: 'image/jpeg', type: 'gas_safety_record', propertyId: 'demo-property-4' });
+  assert.equal((await landlord.listDocuments()).length, before + 1);
+  await assert.rejects(() => landlord.requestUpload({ fileName: 'x.jpg', contentType: 'image/jpeg', type: 'other', propertyId: 'demo-property-3' }));
+
+  const applications = await landlord.listApplications();
+  assert.equal(applications.length, 2);
+  assert.equal(applications.find((a) => a.applicantName === 'Daniel Okafor')!.affordable, true);
+  assert.equal(applications.find((a) => a.applicantName === 'Hannah Price')!.affordable, false);
+  await assert.rejects(() => tenant.listApplications());
+
+  const summary = portfolioSummary({
+    properties: await landlord.listProperties(),
+    tenancies,
+    compliance: (await landlord.listCompliance()).items,
+    repairs: await landlord.listMaintenance(),
+    applications,
+  });
+  assert.equal(summary.properties, 3);
+  assert.equal(summary.let, 2);
+  assert.equal(summary.vacant, 1);
+  assert.equal(summary.monthlyRentPence, 204500);
+  assert.equal(summary.arrearsPence, 39500);
+  assert.equal(summary.tenanciesInArrears, 1);
+  assert.equal(summary.approvalsNeeded, 1);
+  assert.equal(summary.applicationsInProgress, 2);
+  assert.ok(summary.complianceAttention > 0);
 });

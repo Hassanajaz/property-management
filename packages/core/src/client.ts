@@ -1,4 +1,5 @@
 import type { IsoDate } from './dates.ts';
+import type { ArrearsSummary } from './rent/ledger.ts';
 import type {
   ComplianceStatus,
   DocumentType,
@@ -6,6 +7,8 @@ import type {
   MaintenanceStatus,
   MaintenanceUrgency,
   Nation,
+  RentCharge,
+  RentFrequency,
 } from './types.ts';
 
 /** Shapes returned by the API. Shared by the web and mobile apps. */
@@ -70,6 +73,66 @@ export interface NewMaintenanceRequest {
   photoDocumentIds?: string[];
 }
 
+export interface TenancyDto {
+  id: string;
+  propertyId: string;
+  propertyAddress: string;
+  tenantNames: string[];
+  startDate: IsoDate;
+  endDate: IsoDate | null;
+  rentAmountPence: number;
+  rentFrequency: RentFrequency;
+  depositPence: number;
+  depositScheme: string | null;
+  status: 'draft' | 'active' | 'ended';
+  /** Positive: rent owed. Negative: in credit. */
+  balancePence: number;
+  daysInArrears: number;
+}
+
+export interface LedgerPaymentDto {
+  id: string;
+  date: IsoDate;
+  amountPence: number;
+  method: string;
+  status: string;
+}
+
+export interface LedgerDto {
+  charges: RentCharge[];
+  payments: LedgerPaymentDto[];
+  summary: ArrearsSummary;
+}
+
+export interface DocumentDto {
+  id: string;
+  type: DocumentType;
+  fileName: string;
+  propertyId: string | null;
+  tenancyId: string | null;
+  propertyAddress: string | null;
+  createdAt: string;
+}
+
+export type ApplicationStatus = 'invited' | 'submitted' | 'in_review' | 'passed' | 'failed' | 'withdrawn';
+export type CheckKind = 'identity' | 'right_to_rent' | 'income' | 'employer' | 'landlord' | 'credit' | 'guarantor';
+export type CheckStatus = 'pending' | 'passed' | 'failed' | 'not_required';
+
+export interface ApplicationDto {
+  id: string;
+  propertyId: string;
+  propertyAddress: string;
+  applicantName: string;
+  status: ApplicationStatus;
+  monthlyRentPence: number;
+  annualIncomePence: number | null;
+  /** Whether stated income meets the affordability threshold; null until income is known. */
+  affordable: boolean | null;
+  checks: { kind: CheckKind; status: CheckStatus }[];
+  decisionReason: string | null;
+  createdAt: string;
+}
+
 export interface UploadTicket {
   documentId: string;
   uploadUrl: string;
@@ -113,6 +176,11 @@ export function createApiClient(baseUrl: string, getIdToken: () => Promise<strin
     reportMaintenance: (input: NewMaintenanceRequest) => request<MaintenanceRequestDto>('POST', '/maintenance', input),
     updateMaintenance: (id: string, input: { status?: MaintenanceStatus; message?: string; appointmentAt?: string }) =>
       request<MaintenanceRequestDto>('POST', `/maintenance/${id}/updates`, input),
+
+    listTenancies: () => request<TenancyDto[]>('GET', '/tenancies'),
+    getLedger: (tenancyId: string) => request<LedgerDto>('GET', `/tenancies/${tenancyId}/ledger`),
+    listDocuments: () => request<DocumentDto[]>('GET', '/documents'),
+    listApplications: () => request<ApplicationDto[]>('GET', '/referencing/applications'),
 
     requestUpload: (input: { fileName: string; contentType: string; type: DocumentType; propertyId?: string; tenancyId?: string }) =>
       request<UploadTicket>('POST', '/documents/upload-url', input),

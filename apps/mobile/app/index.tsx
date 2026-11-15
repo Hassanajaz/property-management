@@ -1,39 +1,40 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { TENANT_STATUS_LABEL, isStaff, type ComplianceItemDto, type MaintenanceRequestDto } from '@lettly/core';
+import { RefreshControl, ScrollView, Text, View } from 'react-native';
+import type { DocumentDto, MaintenanceRequestDto, TenancyDto } from '@lettly/core';
+import { DocumentRow, Portfolio, RepairCard, TenancyCard } from '../src/portfolio';
 import { useSession } from '../src/session';
-import { Button, StatusBadge, colors, styles } from '../src/ui';
+import { Button, styles } from '../src/ui';
 
-const COMPLIANCE_LABEL = { valid: 'Valid', due_soon: 'Due soon', overdue: 'Overdue', missing: 'Missing' } as const;
-
-/**
- * Home screen. Tenants see their repairs and a button to report a new one.
- * Staff and landlords also see the compliance score and what needs attention.
- */
+/** Landlords and agency staff get the portfolio dashboard; tenants get their own home screen. */
 export default function Home() {
+  const { identity } = useSession();
+  if (!identity) return null;
+  return identity.role === 'tenant' ? <TenantHome /> : <Portfolio />;
+}
+
+function TenantHome() {
   const { identity, api, signOut, demo } = useSession();
   const [repairs, setRepairs] = useState<MaintenanceRequestDto[]>([]);
-  const [compliance, setCompliance] = useState<{ score: number; items: ComplianceItemDto[] } | null>(null);
+  const [tenancies, setTenancies] = useState<TenancyDto[]>([]);
+  const [documents, setDocuments] = useState<DocumentDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const role = identity?.role;
-  const tenant = role === 'tenant';
-
   const load = useCallback(async () => {
-    if (!role) return;
     setLoading(true);
     setError(null);
     try {
-      setRepairs(await api.listMaintenance());
-      if (!tenant) setCompliance(await api.listCompliance());
+      const [r, t, d] = await Promise.all([api.listMaintenance(), api.listTenancies(), api.listDocuments()]);
+      setRepairs(r);
+      setTenancies(t);
+      setDocuments(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load');
     } finally {
       setLoading(false);
     }
-  }, [api, role, tenant]);
+  }, [api]);
 
   useFocusEffect(
     useCallback(() => {
@@ -41,50 +42,28 @@ export default function Home() {
     }, [load]),
   );
 
-  if (!identity || !role) return null;
-  const attention = compliance?.items.filter((i) => !i.upcoming && i.status !== 'valid') ?? [];
   const open = repairs.filter((r) => r.status !== 'confirmed' && r.status !== 'cancelled');
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      {demo ? <Text style={styles.muted}>Demo mode: sample data, nothing is saved. Signed in as {role.replace('_', ' ')}.</Text> : null}
+      {demo ? <Text style={styles.muted}>Demo mode: sample data, nothing is saved. Signed in as tenant.</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {tenant ? <Button title="Report a repair" onPress={() => router.push('/report')} /> : null}
+      <Button title="Report a repair" onPress={() => router.push('/report')} />
 
-      {compliance ? (
-        <View style={styles.card}>
-          <Text style={styles.muted}>Compliance score</Text>
-          <Text style={[styles.h1, { color: compliance.score >= 90 ? colors.good : compliance.score >= 70 ? colors.warn : colors.bad }]}>{compliance.score} / 100</Text>
-          <Text style={styles.muted}>{attention.length === 0 ? 'Nothing needs attention.' : `${attention.length} item${attention.length === 1 ? '' : 's'} need attention`}</Text>
-        </View>
-      ) : null}
+      <Text style={[styles.h2, { marginTop: 8 }]}>Your rent</Text>
+      {tenancies.map((t) => <TenancyCard key={t.id} tenancy={t} />)}
 
-      {attention.slice(0, 10).map((item) => (
-        <View key={item.id} style={styles.card}>
-          <StatusBadge status={item.status} label={COMPLIANCE_LABEL[item.status]} />
-          <Text style={styles.h2}>{item.title}</Text>
-          {item.propertyAddress ? <Text style={styles.muted}>{item.propertyAddress}</Text> : null}
-          {item.expiresOn ?? item.dueDate ? <Text style={styles.muted}>Due {item.expiresOn ?? item.dueDate}</Text> : null}
-        </View>
-      ))}
-
-      <Text style={[styles.h2, { marginTop: 8 }]}>{tenant ? 'Your repairs' : 'Open repairs'}</Text>
+      <Text style={[styles.h2, { marginTop: 8 }]}>Your repairs</Text>
       {open.length === 0 && !loading ? <Text style={styles.muted}>No open repairs.</Text> : null}
-      {open.map((repair) => (
-        <Pressable key={repair.id} accessibilityRole="button" onPress={() => router.push(`/repair/${repair.id}`)} style={styles.card}>
-          <StatusBadge status={repair.status} label={TENANT_STATUS_LABEL[repair.status]} />
-          <Text style={styles.h2}>{repair.title}</Text>
-          <Text style={styles.muted}>
-            {isStaff(role) || role === 'landlord' ? `${repair.propertyAddress} · ` : ''}
-            Reported {new Date(repair.reportedAt).toLocaleDateString('en-GB')}
-            {repair.urgency === 'emergency' ? ' · Emergency' : ''}
-          </Text>
-        </Pressable>
-      ))}
+      {open.map((repair) => <RepairCard key={repair.id} repair={repair} showAddress={false} />)}
+
+      <Text style={[styles.h2, { marginTop: 8 }]}>Your documents</Text>
+      {documents.length === 0 && !loading ? <Text style={styles.muted}>No documents yet.</Text> : null}
+      {documents.map((d) => <DocumentRow key={d.id} document={d} showAddress={false} />)}
 
       <View style={{ marginTop: 24, gap: 8 }}>
-        <Text style={styles.muted}>Signed in as {identity.email}</Text>
+        <Text style={styles.muted}>Signed in as {identity?.email}</Text>
         <Button title={demo ? 'Switch person' : 'Sign out'} kind="secondary" onPress={signOut} />
       </View>
     </ScrollView>

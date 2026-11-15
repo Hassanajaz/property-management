@@ -10,7 +10,7 @@ The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
 | Folder | What it is | State |
 | --- | --- | --- |
-| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (20 tests) and type-checked |
+| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (21 tests) and type-checked |
 | `apps/api` | API (Hono on AWS Lambda), database schema (Drizzle, PostgreSQL), row-level security, invites, maintenance, documents, rent ledger, GoCardless webhook | Written, **not yet run** |
 | `apps/web` | Web app (React, Vite): sign-in, compliance table, repairs, add property | Written, **not yet run** |
 | `apps/mobile` | iOS and Android app (Expo): sign-in, home, report a repair with photos, repair timeline | Written, **not yet run** |
@@ -43,7 +43,10 @@ the same Wi-Fi. The project targets Expo SDK 54, the version the App Store
 Expo Go supported when this was written. If Expo Go reports that the project
 is incompatible, run `EXPO_SDK=58 ./run-on-iphone.sh expo-go`.
 
-In the app, choose Tenant, Agency staff or Landlord. Data is shared between
+In the app, choose Tenant, Agency staff or Landlord. The landlord (and staff) home is a
+portfolio dashboard with sections for properties, rent, compliance, repairs,
+documents and applicants; tap a property for everything about it, or a tenancy
+for its rent statement. Data is shared between
 the three while the app stays open: report a repair as the tenant, tap
 "Switch person", and handle it as agency staff.
 
@@ -57,7 +60,7 @@ sign-up credits still apply).
 
 ```bash
 npm install
-npm test                # shared rules: should print 20 passing tests
+npm test                # shared rules: should print 21 passing tests
 npm run typecheck       # fix anything reported before going further
 
 ```

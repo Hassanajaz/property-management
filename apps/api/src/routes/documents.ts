@@ -5,11 +5,11 @@ import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { isStaff, type DocumentType } from '@lettly/core';
-import { canSeeProperty, canSeeTenancy, visibilityFor } from '../access.ts';
+import { LANDLORD_UPLOAD_TYPES, STAFF_ONLY_DOCUMENT_TYPES, TENANT_DOCUMENT_TYPES, isStaff, type DocumentType } from '@lettly/core';
+import { canSeeProperty, canSeeTenancy, formatAddress, visibilityFor } from '../access.ts';
 import type { AppEnv } from '../auth.ts';
 import { withOrg } from '../db/client.ts';
-import { documents } from '../db/schema.ts';
+import { documents, properties } from '../db/schema.ts';
 import { env } from '../env.ts';
 import { audit } from './portfolio.ts';
 
@@ -18,13 +18,8 @@ export const documentRoutes = new Hono<AppEnv>();
 
 const LINK_SECONDS = 300;
 
-/** Document types a tenant may open for their own home. */
-const TENANT_VISIBLE: readonly DocumentType[] = [
-  'tenancy_agreement', 'written_statement', 'deposit_certificate', 'deposit_prescribed_information',
-  'gas_safety_record', 'eicr', 'epc', 'inventory', 'maintenance_photo',
-];
-/** Personal documents about applicants and tenants that landlords never see. */
-const STAFF_ONLY: readonly DocumentType[] = ['id_document', 'income_evidence', 'reference', 'right_to_rent_check'];
+const TENANT_VISIBLE = TENANT_DOCUMENT_TYPES;
+const STAFF_ONLY = STAFF_ONLY_DOCUMENT_TYPES;
 
 const uploadInput = z.object({
   fileName: z.string().min(1).max(200),
@@ -41,8 +36,13 @@ const uploadInput = z.object({
 documentRoutes.post('/documents/upload-url', async (c) => {
   const auth = c.get('auth');
   const input = uploadInput.parse(await c.req.json());
-  if (!isStaff(auth.role) && input.type !== 'maintenance_photo') {
+  // Staff can add anything. Tenants can add repair photos. Landlords can add
+  // certificates and similar documents, and only to one of their own properties.
+  if (auth.role === 'tenant' && input.type !== 'maintenance_photo') {
     throw new HTTPException(403, { message: 'You can only upload photos for a repair report' });
+  }
+  if (auth.role === 'landlord' && (!LANDLORD_UPLOAD_TYPES.includes(input.type) || !input.propertyId)) {
+    throw new HTTPException(403, { message: 'Choose one of your properties and a certificate type' });
   }
 
   const documentId = randomUUID();
@@ -72,6 +72,35 @@ documentRoutes.post('/documents/upload-url', async (c) => {
     { expiresIn: LINK_SECONDS },
   );
   return c.json({ documentId, uploadUrl }, 201);
+});
+
+/** Documents the signed-in person may see, newest first. */
+documentRoutes.get('/documents', async (c) => {
+  const auth = c.get('auth');
+  const rows = await withOrg(auth.orgId, async (tx) => {
+    const v = await visibilityFor(tx, auth);
+    const all = await tx.select().from(documents);
+    const props = await tx.select().from(properties);
+    const addresses = new Map(props.map((p) => [p.id, formatAddress(p)]));
+    return all
+      .filter((d) => {
+        if (isStaff(auth.role)) return true;
+        if (d.uploadedBy === auth.userId) return true;
+        const inScope = (d.tenancyId !== null && canSeeTenancy(v, d.tenancyId)) || (d.propertyId !== null && canSeeProperty(v, d.propertyId));
+        return inScope && (auth.role === 'tenant' ? TENANT_VISIBLE.includes(d.type) : !STAFF_ONLY.includes(d.type));
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((d) => ({
+        id: d.id,
+        type: d.type,
+        fileName: d.fileName,
+        propertyId: d.propertyId,
+        tenancyId: d.tenancyId,
+        propertyAddress: d.propertyId ? (addresses.get(d.propertyId) ?? null) : null,
+        createdAt: d.createdAt.toISOString(),
+      }));
+  });
+  return c.json(rows);
 });
 
 /** Returns a short-lived link to view a document, if this person is allowed to see it. */

@@ -10,6 +10,7 @@ import { compliance } from './routes/compliance.ts';
 import { documentRoutes } from './routes/documents.ts';
 import { maintenance } from './routes/maintenance.ts';
 import { portfolio } from './routes/portfolio.ts';
+import { referencing } from './routes/referencing.ts';
 import { rent, webhooks } from './routes/rent.ts';
 
 export const app = new Hono();
@@ -47,6 +48,7 @@ api.route('/', compliance);
 api.route('/', maintenance);
 api.route('/', documentRoutes);
 api.route('/', rent);
+api.route('/', referencing);
 app.route('/', api);
 
 app.onError((error, c) => {

@@ -10,3 +10,4 @@ export * from './plans.ts';
 export * from './auth.ts';
 export * from './client.ts';
 export * from './demo.ts';
+export * from './portfolio.ts';

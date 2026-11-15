@@ -1,0 +1,424 @@
+import * as ImagePicker from 'expo-image-picker';
+import * as Linking from 'expo-linking';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import {
+  APPLICATION_STATUS_LABEL,
+  CHECK_LABEL,
+  CHECK_STATUS_LABEL,
+  DOCUMENT_TYPE_LABEL,
+  LANDLORD_UPLOAD_TYPES,
+  TENANT_STATUS_LABEL,
+  formatPence,
+  portfolioSummary,
+  type ApplicationDto,
+  type ComplianceItemDto,
+  type ComplianceStatus,
+  type DocumentDto,
+  type DocumentType,
+  type MaintenanceRequestDto,
+  type PropertyDto,
+  type TenancyDto,
+} from '@lettly/core';
+import { useSession } from './session';
+import { Button, Chip, StatusBadge, colors, styles } from './ui';
+
+export const COMPLIANCE_LABEL: Record<ComplianceStatus, string> = { valid: 'Valid', due_soon: 'Due soon', overdue: 'Overdue', missing: 'Missing' };
+
+export interface PortfolioData {
+  properties: PropertyDto[];
+  tenancies: TenancyDto[];
+  compliance: ComplianceItemDto[];
+  complianceScore: number;
+  repairs: MaintenanceRequestDto[];
+  documents: DocumentDto[];
+  applications: ApplicationDto[];
+}
+
+/** Loads everything a landlord or agency user can see, and reloads whenever the screen comes back into view. */
+export function usePortfolioData() {
+  const { api } = useSession();
+  const [data, setData] = useState<PortfolioData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [properties, tenancies, compliance, repairs, documents, applications] = await Promise.all([
+        api.listProperties(),
+        api.listTenancies(),
+        api.listCompliance(),
+        api.listMaintenance(),
+        api.listDocuments(),
+        api.listApplications(),
+      ]);
+      setData({ properties, tenancies, compliance: compliance.items, complianceScore: compliance.score, repairs, documents, applications });
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load');
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
+
+  return { data, loading, error, load };
+}
+
+// --------------------------------------------------------------- shared cards
+export function scoreColor(score: number): string {
+  return score >= 90 ? colors.good : score >= 70 ? colors.warn : colors.bad;
+}
+
+export function ComplianceCard({ item, showAddress = true }: { item: ComplianceItemDto; showAddress?: boolean }) {
+  const due = item.expiresOn ?? item.dueDate;
+  return (
+    <View style={styles.card}>
+      <StatusBadge status={item.upcoming ? 'confirmed' : item.status} label={item.upcoming ? 'Coming soon' : COMPLIANCE_LABEL[item.status]} />
+      <Text style={styles.h2}>{item.title}</Text>
+      {showAddress && item.propertyAddress ? <Text style={styles.muted}>{item.propertyAddress}</Text> : null}
+      <Text style={styles.muted}>
+        {item.completedOn ? `Last done ${item.completedOn}` : 'No record yet'}
+        {due ? ` · ${item.status === 'overdue' ? 'Was due' : 'Due'} ${due}` : ''}
+        {item.severity === 'best_practice' ? ' · Best practice' : ''}
+      </Text>
+    </View>
+  );
+}
+
+export function RepairCard({ repair, showAddress = true }: { repair: MaintenanceRequestDto; showAddress?: boolean }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={() => router.push(`/repair/${repair.id}`)} style={styles.card}>
+      <StatusBadge status={repair.status} label={TENANT_STATUS_LABEL[repair.status]} />
+      <Text style={styles.h2}>{repair.title}</Text>
+      <Text style={styles.muted}>
+        {showAddress ? `${repair.propertyAddress} · ` : ''}
+        Reported {new Date(repair.reportedAt).toLocaleDateString('en-GB')}
+        {repair.urgency === 'emergency' ? ' · Emergency' : ''}
+      </Text>
+      {repair.status === 'awaiting_landlord_approval' ? <Text style={[styles.body, { color: colors.warn }]}>Needs approval. Tap to review.</Text> : null}
+    </Pressable>
+  );
+}
+
+export function TenancyCard({ tenancy, showAddress = true }: { tenancy: TenancyDto; showAddress?: boolean }) {
+  const owing = tenancy.balancePence > 0;
+  return (
+    <Pressable accessibilityRole="button" onPress={() => router.push(`/tenancy/${tenancy.id}`)} style={styles.card}>
+      <StatusBadge
+        status={owing ? 'overdue' : 'valid'}
+        label={owing ? `${formatPence(tenancy.balancePence)} owed · ${tenancy.daysInArrears} days` : tenancy.balancePence < 0 ? `${formatPence(-tenancy.balancePence)} in credit` : 'Rent up to date'}
+      />
+      {showAddress ? <Text style={styles.h2}>{tenancy.propertyAddress}</Text> : null}
+      <Text style={styles.body}>{tenancy.tenantNames.join(' and ')}</Text>
+      <Text style={styles.muted}>
+        {formatPence(tenancy.rentAmountPence)} {tenancy.rentFrequency.replace('_', ' ')} · since {tenancy.startDate}
+      </Text>
+      <Text style={[styles.muted, { color: colors.brand }]}>View rent statement</Text>
+    </Pressable>
+  );
+}
+
+export function DocumentRow({ document, showAddress = true }: { document: DocumentDto; showAddress?: boolean }) {
+  const { api, demo } = useSession();
+  const [note, setNote] = useState<string | null>(null);
+
+  async function open() {
+    setNote(null);
+    try {
+      const { url } = await api.downloadUrl(document.id);
+      await Linking.openURL(url);
+    } catch (e) {
+      setNote(demo ? 'Files cannot be opened in demo mode.' : e instanceof Error ? e.message : 'Could not open the file');
+    }
+  }
+
+  return (
+    <Pressable accessibilityRole="button" onPress={open} style={styles.card}>
+      <Text style={styles.h2}>{DOCUMENT_TYPE_LABEL[document.type]}</Text>
+      <Text style={styles.body}>{document.fileName}</Text>
+      <Text style={styles.muted}>
+        {showAddress && document.propertyAddress ? `${document.propertyAddress} · ` : ''}
+        Added {new Date(document.createdAt).toLocaleDateString('en-GB')}
+      </Text>
+      {note ? <Text style={styles.muted}>{note}</Text> : null}
+    </Pressable>
+  );
+}
+
+const APPLICATION_TONE: Record<ApplicationDto['status'], ComplianceStatus> = {
+  invited: 'due_soon',
+  submitted: 'due_soon',
+  in_review: 'due_soon',
+  passed: 'valid',
+  failed: 'overdue',
+  withdrawn: 'missing',
+};
+const CHECK_COLOR = { passed: colors.good, failed: colors.bad, pending: colors.warn, not_required: colors.muted } as const;
+
+export function ApplicationCard({ application, showAddress = true }: { application: ApplicationDto; showAddress?: boolean }) {
+  const passed = application.checks.filter((c) => c.status === 'passed').length;
+  return (
+    <View style={styles.card}>
+      <StatusBadge status={APPLICATION_TONE[application.status]} label={APPLICATION_STATUS_LABEL[application.status]} />
+      <Text style={styles.h2}>{application.applicantName}</Text>
+      {showAddress ? <Text style={styles.muted}>{application.propertyAddress}</Text> : null}
+      <Text style={styles.body}>
+        Rent {formatPence(application.monthlyRentPence)} a month
+        {application.annualIncomePence !== null ? ` · income ${formatPence(application.annualIncomePence)} a year` : ''}
+      </Text>
+      {application.affordable !== null ? (
+        <Text style={[styles.body, { color: application.affordable ? colors.good : colors.warn }]}>
+          {application.affordable ? 'Income meets the affordability test' : 'Income is below the affordability test; a guarantor may be needed'}
+        </Text>
+      ) : null}
+      <Text style={styles.label}>
+        Checks: {passed} of {application.checks.length} passed
+      </Text>
+      {application.checks.map((check) => (
+        <View key={check.kind} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={styles.body}>{CHECK_LABEL[check.kind]}</Text>
+          <Text style={[styles.body, { color: CHECK_COLOR[check.status] }]}>{CHECK_STATUS_LABEL[check.status]}</Text>
+        </View>
+      ))}
+      {application.decisionReason ? <Text style={styles.muted}>{application.decisionReason}</Text> : null}
+    </View>
+  );
+}
+
+/** Form for adding a certificate or other document to a property from the phone's photos. */
+export function AddDocument({ properties, fixedPropertyId, onAdded }: { properties: PropertyDto[]; fixedPropertyId?: string; onAdded: () => void }) {
+  const { api } = useSession();
+  const [open, setOpen] = useState(false);
+  const [propertyId, setPropertyId] = useState<string | undefined>(fixedPropertyId ?? properties[0]?.id);
+  const [type, setType] = useState<DocumentType>('gas_safety_record');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function pick() {
+    if (!propertyId) return;
+    setMessage(null);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setMessage('Allow photo access in Settings to add documents.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    const asset = result.canceled ? undefined : result.assets[0];
+    if (!asset) return;
+
+    setBusy(true);
+    try {
+      const contentType = asset.mimeType ?? 'image/jpeg';
+      const ticket = await api.requestUpload({ fileName: asset.fileName ?? `${type}-${Date.now()}.jpg`, contentType, type, propertyId });
+      if (ticket.uploadUrl) {
+        const file = await (await fetch(asset.uri)).blob();
+        const upload = await fetch(ticket.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
+        if (!upload.ok) throw new Error('The file could not be uploaded. Please try again.');
+      }
+      setOpen(false);
+      setMessage('Document added.');
+      onAdded();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Could not add the document');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <View style={{ gap: 6 }}>
+        <Button title="Add a document" kind="secondary" onPress={() => setOpen(true)} />
+        {message ? <Text style={styles.muted}>{message}</Text> : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.h2}>Add a document</Text>
+      {fixedPropertyId ? null : (
+        <>
+          <Text style={styles.label}>Property</Text>
+          <View style={styles.row}>
+            {properties.map((p) => (
+              <Chip key={p.id} label={p.addressLine1} selected={propertyId === p.id} onPress={() => setPropertyId(p.id)} />
+            ))}
+          </View>
+        </>
+      )}
+      <Text style={styles.label}>Type</Text>
+      <View style={styles.row}>
+        {LANDLORD_UPLOAD_TYPES.map((t) => (
+          <Chip key={t} label={DOCUMENT_TYPE_LABEL[t]} selected={type === t} onPress={() => setType(t)} />
+        ))}
+      </View>
+      {message ? <Text style={styles.error}>{message}</Text> : null}
+      <Button title="Choose a photo of the document" onPress={pick} busy={busy} />
+      <Button title="Cancel" kind="secondary" onPress={() => setOpen(false)} />
+    </View>
+  );
+}
+
+// ------------------------------------------------------------------ dashboard
+const SECTIONS = ['Overview', 'Properties', 'Rent', 'Compliance', 'Repairs', 'Documents', 'Applicants'] as const;
+type Section = (typeof SECTIONS)[number];
+
+function Stat({ label, value, hint, tone, onPress }: { label: string; value: string; hint?: string; tone?: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.card, { flexBasis: '47%', flexGrow: 1 }]}>
+      <Text style={styles.muted}>{label}</Text>
+      <Text style={{ fontSize: 22, fontWeight: '700', color: tone ?? colors.ink }}>{value}</Text>
+      {hint ? <Text style={styles.muted}>{hint}</Text> : null}
+    </Pressable>
+  );
+}
+
+/** Home screen for landlords and agency staff: the whole portfolio in sections. */
+export function Portfolio() {
+  const { identity, signOut, demo } = useSession();
+  const { data, loading, error, load } = usePortfolioData();
+  const [section, setSection] = useState<Section>('Overview');
+
+  const summary = useMemo(() => (data ? portfolioSummary(data) : null), [data]);
+  const letTo = useMemo(() => new Map((data?.tenancies ?? []).filter((t) => t.status === 'active').map((t) => [t.propertyId, t])), [data]);
+
+  if (!identity) return null;
+  const landlord = identity.role === 'landlord';
+
+  return (
+    <View style={styles.page}>
+      <View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 12, gap: 8 }}>
+          {SECTIONS.map((name) => (
+            <Chip key={name} label={name} selected={section === name} onPress={() => setSection(name)} />
+          ))}
+        </ScrollView>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+        {demo ? <Text style={styles.muted}>Demo mode: sample data, nothing is saved. Signed in as {identity.role.replace('_', ' ')}.</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        {data && summary && section === 'Overview' ? (
+          <>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              <Stat label="Properties" value={String(summary.properties)} hint={`${summary.let} let · ${summary.vacant} vacant`} onPress={() => setSection('Properties')} />
+              <Stat label="Rent per month" value={formatPence(summary.monthlyRentPence)} hint="Across current tenancies" onPress={() => setSection('Rent')} />
+              <Stat
+                label="Rent arrears"
+                value={formatPence(summary.arrearsPence)}
+                hint={summary.tenanciesInArrears === 0 ? 'All rent up to date' : `${summary.tenanciesInArrears} tenancy behind`}
+                tone={summary.arrearsPence > 0 ? colors.bad : colors.good}
+                onPress={() => setSection('Rent')}
+              />
+              <Stat
+                label="Compliance"
+                value={`${data.complianceScore} / 100`}
+                hint={summary.complianceAttention === 0 ? 'Nothing outstanding' : `${summary.complianceAttention} need attention`}
+                tone={scoreColor(data.complianceScore)}
+                onPress={() => setSection('Compliance')}
+              />
+              <Stat
+                label="Open repairs"
+                value={String(summary.openRepairs)}
+                hint={summary.approvalsNeeded > 0 ? `${summary.approvalsNeeded} awaiting ${landlord ? 'your' : 'landlord'} approval` : 'None awaiting approval'}
+                tone={summary.approvalsNeeded > 0 ? colors.warn : undefined}
+                onPress={() => setSection('Repairs')}
+              />
+              <Stat label="Applicants" value={String(summary.applicationsInProgress)} hint="Being referenced" onPress={() => setSection('Applicants')} />
+            </View>
+
+            <Text style={[styles.h2, { marginTop: 8 }]}>Needs attention</Text>
+            {data.repairs.filter((r) => r.status === 'awaiting_landlord_approval').map((r) => <RepairCard key={r.id} repair={r} />)}
+            {data.tenancies.filter((t) => t.balancePence > 0).map((t) => <TenancyCard key={t.id} tenancy={t} />)}
+            {data.compliance
+              .filter((i) => !i.upcoming && i.severity === 'statutory' && (i.status === 'overdue' || i.status === 'missing'))
+              .slice(0, 6)
+              .map((i) => <ComplianceCard key={i.id} item={i} />)}
+            {summary.approvalsNeeded === 0 && summary.tenanciesInArrears === 0 && summary.complianceAttention === 0 ? <Text style={styles.muted}>Nothing needs attention right now.</Text> : null}
+          </>
+        ) : null}
+
+        {data && section === 'Properties'
+          ? data.properties.map((property) => {
+              const tenancy = letTo.get(property.id);
+              const issues = data.compliance.filter((i) => i.propertyId === property.id && !i.upcoming && i.severity === 'statutory' && i.status !== 'valid').length;
+              return (
+                <Pressable key={property.id} accessibilityRole="button" onPress={() => router.push(`/property/${property.id}`)} style={styles.card}>
+                  <StatusBadge status={tenancy ? 'valid' : 'due_soon'} label={tenancy ? 'Let' : 'Vacant'} />
+                  <Text style={styles.h2}>{property.addressLine1}</Text>
+                  <Text style={styles.muted}>
+                    {property.town} {property.postcode} · {property.nation.replace('_', ' ')}
+                  </Text>
+                  <Text style={styles.body}>{tenancy ? `${tenancy.tenantNames.join(' and ')} · ${formatPence(tenancy.rentAmountPence)} ${tenancy.rentFrequency.replace('_', ' ')}` : 'No current tenancy'}</Text>
+                  <Text style={[styles.muted, { color: issues > 0 ? colors.bad : colors.good }]}>{issues > 0 ? `${issues} compliance item${issues === 1 ? '' : 's'} need attention` : 'Compliance up to date'}</Text>
+                </Pressable>
+              );
+            })
+          : null}
+
+        {data && summary && section === 'Rent' ? (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.muted}>Rent due per month</Text>
+              <Text style={styles.h1}>{formatPence(summary.monthlyRentPence)}</Text>
+              <Text style={[styles.body, { color: summary.arrearsPence > 0 ? colors.bad : colors.good }]}>
+                {summary.arrearsPence > 0 ? `${formatPence(summary.arrearsPence)} currently owed by tenants` : 'All rent is up to date'}
+              </Text>
+            </View>
+            {data.tenancies.map((t) => <TenancyCard key={t.id} tenancy={t} />)}
+            {data.tenancies.length === 0 ? <Text style={styles.muted}>No tenancies yet.</Text> : null}
+          </>
+        ) : null}
+
+        {data && section === 'Compliance' ? (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.muted}>Compliance score</Text>
+              <Text style={[styles.h1, { color: scoreColor(data.complianceScore) }]}>{data.complianceScore} / 100</Text>
+              <Text style={styles.muted}>The share of legal requirements currently met across {landlord ? 'your' : 'all'} properties.</Text>
+            </View>
+            {data.compliance.map((i) => <ComplianceCard key={i.id} item={i} />)}
+          </>
+        ) : null}
+
+        {data && section === 'Repairs' ? (
+          <>
+            {data.repairs.map((r) => <RepairCard key={r.id} repair={r} />)}
+            {data.repairs.length === 0 ? <Text style={styles.muted}>No repairs reported.</Text> : null}
+          </>
+        ) : null}
+
+        {data && section === 'Documents' ? (
+          <>
+            <AddDocument properties={data.properties} onAdded={load} />
+            {data.documents.map((d) => <DocumentRow key={d.id} document={d} />)}
+            {data.documents.length === 0 ? <Text style={styles.muted}>No documents yet.</Text> : null}
+          </>
+        ) : null}
+
+        {data && section === 'Applicants' ? (
+          <>
+            <Text style={styles.muted}>People applying to rent {landlord ? 'your' : 'the'} properties, with the progress of their referencing checks. The agency makes the final referencing decision.</Text>
+            {data.applications.map((a) => <ApplicationCard key={a.id} application={a} />)}
+            {data.applications.length === 0 ? <Text style={styles.muted}>No applicants at the moment.</Text> : null}
+          </>
+        ) : null}
+
+        <View style={{ marginTop: 24, gap: 8 }}>
+          <Text style={styles.muted}>Signed in as {identity.email}</Text>
+          <Button title={demo ? 'Switch person' : 'Sign out'} kind="secondary" onPress={signOut} />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}

@@ -3,11 +3,11 @@ import { count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { canAddProperty, generateRequirements, planById, today, type Role } from '@lettly/core';
-import { canSeeProperty, visibilityFor } from '../access.ts';
+import { arrears, canAddProperty, generateRequirements, generateSchedule, planById, today, type Role } from '@lettly/core';
+import { canSeeProperty, canSeeTenancy, formatAddress, visibilityFor } from '../access.ts';
 import { requireStaff, type AppEnv, type AuthContext } from '../auth.ts';
 import { withOrg, type Tx } from '../db/client.ts';
-import { auditLog, complianceItems, landlords, organisations, properties, tenancies, tenancyTenants, users } from '../db/schema.ts';
+import { auditLog, complianceItems, landlords, organisations, payments, properties, tenancies, tenancyTenants, users } from '../db/schema.ts';
 import { env } from '../env.ts';
 
 const cognito = new CognitoIdentityProviderClient({});
@@ -114,6 +114,43 @@ const tenancyInput = z.object({
   depositPence: z.number().int().min(0).default(0),
   depositReceivedOn: isoDate.optional(),
   tenants: z.array(z.object({ name: z.string().min(1), email: z.string().email(), phone: z.string().optional(), isGuarantor: z.boolean().default(false) })).min(1),
+});
+
+/** Tenancies the signed-in person may see, each with its current rent balance. */
+portfolio.get('/tenancies', async (c) => {
+  const auth = c.get('auth');
+  const onDate = today();
+  const rows = await withOrg(auth.orgId, async (tx) => {
+    const v = await visibilityFor(tx, auth);
+    const visible = (await tx.select().from(tenancies)).filter((t) => canSeeTenancy(v, t.id));
+    const props = await tx.select().from(properties);
+    const people = await tx.select().from(tenancyTenants);
+    const received = await tx.select().from(payments);
+    return visible.map((t) => {
+      const property = props.find((p) => p.id === t.propertyId);
+      const charges = generateSchedule(
+        { startDate: t.startDate, endDate: t.endDate ?? undefined, amountPence: t.rentAmountPence, frequency: t.rentFrequency },
+        onDate,
+      );
+      const summary = arrears(charges, received.filter((p) => p.tenancyId === t.id && p.status === 'confirmed'), onDate);
+      return {
+        id: t.id,
+        propertyId: t.propertyId,
+        propertyAddress: property ? formatAddress(property) : '',
+        tenantNames: people.filter((p) => p.tenancyId === t.id && !p.isGuarantor).map((p) => p.name),
+        startDate: t.startDate,
+        endDate: t.endDate,
+        rentAmountPence: t.rentAmountPence,
+        rentFrequency: t.rentFrequency,
+        depositPence: t.depositPence,
+        depositScheme: t.depositScheme,
+        status: t.status,
+        balancePence: summary.balancePence,
+        daysInArrears: summary.daysInArrears,
+      };
+    });
+  });
+  return c.json(rows);
 });
 
 portfolio.post('/tenancies', async (c) => {

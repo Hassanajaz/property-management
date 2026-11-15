@@ -27,6 +27,8 @@ function Screens() {
       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
       <Stack.Screen name="report" options={{ title: 'Report a repair', presentation: 'modal' }} />
       <Stack.Screen name="repair/[id]" options={{ title: 'Repair' }} />
+      <Stack.Screen name="property/[id]" options={{ title: 'Property' }} />
+      <Stack.Screen name="tenancy/[id]" options={{ title: 'Rent statement' }} />
     </Stack>
   );
 }

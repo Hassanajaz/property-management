@@ -1,9 +1,24 @@
-import { ApiError, type ApiClient, type ComplianceItemDto, type MaintenanceRequestDto, type MaintenanceUpdateDto, type PropertyDto } from './client.ts';
+import {
+  ApiError,
+  type ApiClient,
+  type ApplicationDto,
+  type ComplianceItemDto,
+  type DocumentDto,
+  type LedgerPaymentDto,
+  type MaintenanceRequestDto,
+  type MaintenanceUpdateDto,
+  type PropertyDto,
+  type TenancyDto,
+} from './client.ts';
 import { complianceScore, generateRequirements, nextDue, statusOf, type RequirementState } from './compliance/engine.ts';
 import { COMPLIANCE_RULES } from './compliance/rules.ts';
 import { addDays, addMonths, today, type IsoDate } from './dates.ts';
 import { canTransition } from './maintenance.ts';
-import { isStaff, type Role } from './types.ts';
+import { STAFF_ONLY_DOCUMENT_TYPES, TENANT_DOCUMENT_TYPES } from './portfolio.ts';
+import { affordability } from './referencing/affordability.ts';
+import { arrears } from './rent/ledger.ts';
+import { generateSchedule } from './rent/schedule.ts';
+import { isStaff, type DocumentType, type Role } from './types.ts';
 
 /**
  * Demo mode: an in-memory stand-in for the API with sample data, so the apps
@@ -23,8 +38,13 @@ interface DemoItem {
   dueDate: IsoDate | null;
 }
 
+type DemoTenancy = Omit<TenancyDto, 'propertyAddress' | 'balancePence' | 'daysInArrears'> & { payments: LedgerPaymentDto[] };
+
 interface DemoStore {
   properties: PropertyDto[];
+  tenancies: DemoTenancy[];
+  documents: DocumentDto[];
+  applications: ApplicationDto[];
   items: DemoItem[];
   repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[] })[];
   nextId: number;
@@ -51,16 +71,17 @@ function seed(): DemoStore {
     { id: TENANT_PROPERTY_ID, addressLine1: '14 Maple Road', addressLine2: null, town: 'Leeds', postcode: 'LS6 2AB', nation: 'england', landlordId: LANDLORD_ID, hasGas: true, isHmo: false },
     { id: 'demo-property-2', addressLine1: 'Flat 3, 22 Harbour Street', addressLine2: null, town: 'Cardiff', postcode: 'CF10 5AA', nation: 'wales', landlordId: LANDLORD_ID, hasGas: true, isHmo: false },
     { id: 'demo-property-3', addressLine1: '8 Glen View', addressLine2: null, town: 'Edinburgh', postcode: 'EH6 4QQ', nation: 'scotland', landlordId: null, hasGas: false, isHmo: true },
+    { id: 'demo-property-4', addressLine1: '5 Orchard Close', addressLine2: null, town: 'Bristol', postcode: 'BS7 8QT', nation: 'england', landlordId: LANDLORD_ID, hasGas: true, isHmo: false },
   ];
 
   // Months since each certificate was last done, chosen to show every status.
   const monthsAgo: Record<string, (number | null)[]> = {
-    gas_safety: [11, 13, null],
-    eicr: [24, 59, 30],
-    epc: [40, 12, 130],
-    alarms: [20, 20, null],
-    legionella: [null, 6, 30],
-    hmo_licence: [null, null, 10],
+    gas_safety: [11, 13, null, 2],
+    eicr: [24, 59, 30, 10],
+    epc: [40, 12, 130, 20],
+    alarms: [20, 20, null, 5],
+    legionella: [null, 6, 30, 5],
+    hmo_licence: [null, null, 10, null],
   };
 
   const items: DemoItem[] = [];
@@ -105,6 +126,88 @@ function seed(): DemoStore {
 
   const first = properties[0]!;
   const second = properties[1]!;
+  const third = properties[2]!;
+  const fourth = properties[3]!;
+
+  // Rent accounts. Payments are listed against the dates rent fell due.
+  let paymentNo = 0;
+  const paid = (date: IsoDate, amountPence: number): LedgerPaymentDto => ({
+    id: `demo-payment-${(paymentNo += 1)}`,
+    date,
+    amountPence,
+    method: 'direct_debit',
+    status: 'confirmed',
+  });
+  const secondStart = addDays(addMonths(now, -14), -10);
+  const thirdStart = addDays(addMonths(now, -8), -3);
+  const tenancies: DemoTenancy[] = [
+    {
+      id: TENANT_TENANCY_ID, propertyId: first.id, tenantNames: ['Priya Shah', 'Tom Reed'], startDate: tenancyStart, endDate: null,
+      rentAmountPence: 115000, rentFrequency: 'monthly', depositPence: 132500, depositScheme: null, status: 'active',
+      payments: [paid(tenancyStart, 115000)],
+    },
+    {
+      // Paid in full for 14 months, then a part payment 10 days ago: in arrears.
+      id: 'demo-tenancy-2', propertyId: second.id, tenantNames: ['Megan Lloyd'], startDate: secondStart, endDate: null,
+      rentAmountPence: 89500, rentFrequency: 'monthly', depositPence: 103000, depositScheme: 'Deposit Protection Service', status: 'active',
+      payments: [...Array.from({ length: 14 }, (_, k) => paid(addMonths(secondStart, k), 89500)), paid(addMonths(secondStart, 14), 50000)],
+    },
+    {
+      id: 'demo-tenancy-3', propertyId: third.id, tenantNames: ['Callum Fraser'], startDate: thirdStart, endDate: null,
+      rentAmountPence: 72000, rentFrequency: 'monthly', depositPence: 72000, depositScheme: 'SafeDeposits Scotland', status: 'active',
+      payments: Array.from({ length: 9 }, (_, k) => paid(addMonths(thirdStart, k), 72000)),
+    },
+  ];
+
+  let documentNo = 0;
+  const doc = (property: PropertyDto, type: DocumentType, fileName: string, monthsOld: number, tenancyId: string | null = null): DocumentDto => ({
+    id: `demo-document-${(documentNo += 1)}`,
+    type,
+    fileName,
+    propertyId: property.id,
+    tenancyId,
+    propertyAddress: address(property),
+    createdAt: `${addMonths(now, -monthsOld)}T09:00:00.000Z`,
+  });
+  const documents: DocumentDto[] = [
+    doc(first, 'gas_safety_record', 'Gas safety record.pdf', 11),
+    doc(first, 'eicr', 'Electrical report.pdf', 24),
+    doc(first, 'epc', 'Energy certificate.pdf', 40),
+    doc(first, 'tenancy_agreement', 'Tenancy agreement - Shah and Reed.pdf', 0, TENANT_TENANCY_ID),
+    doc(first, 'inventory', 'Check-in inventory.pdf', 0, TENANT_TENANCY_ID),
+    doc(first, 'right_to_rent_check', 'Right to Rent - Shah.pdf', 1, TENANT_TENANCY_ID),
+    doc(second, 'gas_safety_record', 'Gas safety record.pdf', 13),
+    doc(second, 'epc', 'Energy certificate.pdf', 12),
+    doc(second, 'tenancy_agreement', 'Occupation contract - Lloyd.pdf', 14, 'demo-tenancy-2'),
+    doc(second, 'deposit_certificate', 'Deposit certificate.pdf', 14, 'demo-tenancy-2'),
+    doc(third, 'eicr', 'Electrical report.pdf', 30),
+    doc(fourth, 'gas_safety_record', 'Gas safety record.pdf', 2),
+    doc(fourth, 'epc', 'Energy certificate.pdf', 20),
+  ];
+
+  const applications: ApplicationDto[] = [
+    {
+      id: 'demo-application-1', propertyId: fourth.id, propertyAddress: address(fourth), applicantName: 'Daniel Okafor', status: 'in_review',
+      monthlyRentPence: 130000, annualIncomePence: 5200000,
+      affordable: affordability({ monthlyRentPence: 130000, annualIncomePence: 5200000 }).passes,
+      checks: [
+        { kind: 'identity', status: 'passed' }, { kind: 'right_to_rent', status: 'passed' }, { kind: 'income', status: 'passed' },
+        { kind: 'credit', status: 'passed' }, { kind: 'employer', status: 'pending' }, { kind: 'landlord', status: 'pending' },
+      ],
+      decisionReason: null, createdAt: hoursAgo(24 * 3),
+    },
+    {
+      id: 'demo-application-2', propertyId: fourth.id, propertyAddress: address(fourth), applicantName: 'Hannah Price', status: 'submitted',
+      monthlyRentPence: 130000, annualIncomePence: 3600000,
+      affordable: affordability({ monthlyRentPence: 130000, annualIncomePence: 3600000 }).passes,
+      checks: [
+        { kind: 'identity', status: 'passed' }, { kind: 'right_to_rent', status: 'pending' }, { kind: 'income', status: 'pending' },
+        { kind: 'credit', status: 'pending' }, { kind: 'employer', status: 'pending' }, { kind: 'landlord', status: 'pending' },
+        { kind: 'guarantor', status: 'pending' },
+      ],
+      decisionReason: null, createdAt: hoursAgo(20),
+    },
+  ];
   const repairs: DemoStore['repairs'] = [
     {
       id: 'demo-repair-1',
@@ -161,7 +264,7 @@ function seed(): DemoStore {
     },
   ];
 
-  return { properties, items, repairs, nextId: 100 };
+  return { properties, tenancies, documents, applications, items, repairs, nextId: 100 };
 }
 
 function demoStore(): DemoStore {
@@ -220,6 +323,12 @@ export function createDemoApi(role: Role): ApiClient {
     if (!repair || !canSee(repair.propertyId)) throw new ApiError(404, 'Request not found');
     return repair;
   };
+
+  const ledgerCharges = (tenancy: Pick<DemoTenancy, 'startDate' | 'endDate' | 'rentAmountPence' | 'rentFrequency'>, onDate: IsoDate) =>
+    generateSchedule(
+      { startDate: tenancy.startDate, endDate: tenancy.endDate ?? undefined, amountPence: tenancy.rentAmountPence, frequency: tenancy.rentFrequency },
+      onDate,
+    );
 
   const withoutUpdates = ({ updates: _updates, ...repair }: DemoStore['repairs'][number]): MaintenanceRequestDto => repair;
 
@@ -310,8 +419,52 @@ export function createDemoApi(role: Role): ApiClient {
       return withoutUpdates(repair);
     },
 
+    listTenancies: async () => {
+      const onDate = today();
+      return s.tenancies
+        .filter((tenancy) => canSee(tenancy.propertyId))
+        .map(({ payments, ...tenancy }) => {
+          const summary = arrears(ledgerCharges(tenancy, onDate), payments, onDate);
+          const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
+          return { ...tenancy, propertyAddress: address(property), balancePence: summary.balancePence, daysInArrears: summary.daysInArrears };
+        });
+    },
+
+    getLedger: async (tenancyId) => {
+      const tenancy = s.tenancies.find((t) => t.id === tenancyId);
+      if (!tenancy || !canSee(tenancy.propertyId)) throw new ApiError(404, 'Tenancy not found');
+      const onDate = today();
+      const charges = ledgerCharges(tenancy, onDate);
+      return { charges, payments: [...tenancy.payments], summary: arrears(charges, tenancy.payments, onDate) };
+    },
+
+    listDocuments: async () =>
+      s.documents
+        .filter((d) => d.propertyId !== null && canSee(d.propertyId))
+        .filter((d) => staff || (role === 'tenant' ? TENANT_DOCUMENT_TYPES.includes(d.type) : !STAFF_ONLY_DOCUMENT_TYPES.includes(d.type)))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+
+    listApplications: async () => {
+      if (role === 'tenant') throw new ApiError(403, 'Not available for tenant accounts');
+      return s.applications.filter((a) => canSee(a.propertyId));
+    },
+
     // Demo mode has no file storage: an empty uploadUrl tells the app to skip the upload.
-    requestUpload: async () => ({ documentId: `demo-document-${(s.nextId += 1)}`, uploadUrl: '' }),
+    requestUpload: async (input) => {
+      const documentId = `demo-document-${(s.nextId += 1)}`;
+      const property = s.properties.find((p) => p.id === (input.propertyId ?? TENANT_PROPERTY_ID));
+      if (input.propertyId && !canSee(input.propertyId)) throw new ApiError(403, 'Not your property');
+      s.documents.push({
+        id: documentId,
+        type: input.type,
+        fileName: input.fileName,
+        propertyId: property?.id ?? null,
+        tenancyId: input.tenancyId ?? null,
+        propertyAddress: property ? address(property) : null,
+        createdAt: new Date().toISOString(),
+      });
+      return { documentId, uploadUrl: '' };
+    },
     downloadUrl: async () => {
       throw new ApiError(404, 'Documents are not available in demo mode');
     },
