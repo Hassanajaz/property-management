@@ -125,4 +125,4 @@ npm run dev:mobile                    # scan the QR code with Expo Go on your iP
 
 `packages/core/src/compliance/rules.ts` is a seed rule set written from general
 knowledge. It is not legal advice. Have a lettings solicitor review it before
-other agencies rely on it.
+other landlords rely on it.
