@@ -52,4 +52,18 @@ fi
 say "3/3 Building and installing on your iPhone (10 to 20 minutes the first time)..."
 echo "Before this step: plug the iPhone in with a cable, unlock it and tap Trust."
 echo "If asked for a signing team, choose your Apple ID (add it in Xcode > Settings > Accounts)."
-exec npx expo run:ios --device --configuration Release
+# Find the plugged-in iPhone or iPad. Real devices are listed with an iOS version, e.g.
+#   iPhone (26.5.2) (00008130-0002319C3420001C)
+DEVICE_ID="$(xcrun xctrace list devices 2>/dev/null | sed '/== Simulators ==/,$d' \
+  | sed -nE 's/^.+ \([0-9]+\.[0-9.]+\) \(([0-9A-Fa-f-]+)\)$/\1/p' | head -n 1)"
+[ -n "$DEVICE_ID" ] || fail "No iPhone found. Plug it in with a cable, unlock it, tap Trust, turn on
+Settings > Privacy & Security > Developer Mode, then run this again."
+
+# Xcode cannot build for iPhone until its iOS platform files are downloaded.
+if ! xcodebuild -showsdks 2>/dev/null | grep -q iphoneos || ! xcrun simctl list runtimes 2>/dev/null | grep -q iOS; then
+  say "Downloading Xcode's iOS platform files (several GB, one time only)..."
+  xcodebuild -downloadPlatform iOS || echo "Could not download automatically. In Xcode open Settings > Components and get iOS, then run this again."
+fi
+
+echo "Installing to device $DEVICE_ID"
+exec npx expo run:ios --device "$DEVICE_ID" --configuration Release
