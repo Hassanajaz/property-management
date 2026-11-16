@@ -42,11 +42,25 @@ export function generateSchedule(terms: RentTerms, until: IsoDate): RentCharge[]
 
     const fullDays = diffDays(start, fullEnd) + 1;
     const days = diffDays(start, end) + 1;
-    const amountPence = cutShort ? Math.round((terms.amountPence * days) / fullDays) : terms.amountPence;
+    const rent = rentOn(terms, start);
+    const amountPence = cutShort ? Math.round((rent * days) / fullDays) : rent;
 
     charges.push({ dueDate: start, periodStart: start, periodEnd: end, amountPence, proRata: cutShort });
   }
   return charges;
+}
+
+/** The rent in force on a date: the latest change that had taken effect by then, or the starting rent. */
+export function rentOn(terms: Pick<RentTerms, 'amountPence' | 'changes'>, date: IsoDate): number {
+  let amount = terms.amountPence;
+  let latest = '';
+  for (const change of terms.changes ?? []) {
+    if (change.effectiveFrom <= date && change.effectiveFrom >= latest) {
+      latest = change.effectiveFrom;
+      amount = change.amountPence;
+    }
+  }
+  return amount;
 }
 
 /** Rent expressed per calendar month, for affordability checks and comparisons. */

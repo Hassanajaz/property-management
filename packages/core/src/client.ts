@@ -25,6 +25,15 @@ export interface PropertyDto {
   /** Landlord's estimate of what the property is worth, for equity and yield. */
   valuePence?: number | null;
   mortgagePence?: number | null;
+  /** Details for advertising the property when it is vacant. */
+  advert?: AdvertDto | null;
+}
+
+export interface AdvertDto {
+  headline: string;
+  description: string;
+  rentPence: number;
+  availableFrom: IsoDate;
 }
 
 export interface ComplianceItemDto {
@@ -96,6 +105,8 @@ export interface TenancyDto {
   /** Positive: rent owed. Negative: in credit. */
   balancePence: number;
   daysInArrears: number;
+  /** When the rent last changed; the tenancy start date if it never has. */
+  rentLastChangedOn?: IsoDate;
 }
 
 export interface LedgerPaymentDto {
@@ -244,6 +255,62 @@ export interface NewTenancy {
   tenants: { name: string; email: string }[];
 }
 
+export type ViewingOutcome = 'booked' | 'attended' | 'no_show' | 'cancelled';
+
+export interface ViewingDto {
+  id: string;
+  propertyId: string;
+  propertyAddress: string;
+  name: string;
+  contact: string | null;
+  /** Date and time of the viewing, e.g. 2026-11-20T17:30. */
+  at: string;
+  outcome: ViewingOutcome;
+  notes: string | null;
+}
+
+export type NoticeKind = 'rent_increase' | 'possession' | 'access' | 'other';
+
+export interface NoticeDto {
+  id: string;
+  tenancyId: string;
+  propertyAddress: string;
+  tenantNames: string[];
+  kind: NoticeKind;
+  servedOn: IsoDate;
+  method: 'post' | 'hand' | 'email';
+  /** The date the notice takes effect or expires, if it has one. */
+  effectiveOn: IsoDate | null;
+  notes: string | null;
+}
+
+export type PossessionStage =
+  | 'notice_served'
+  | 'notice_expired'
+  | 'claim_issued'
+  | 'hearing_listed'
+  | 'order_made'
+  | 'enforcement_requested'
+  | 'possession_recovered'
+  | 'withdrawn';
+
+export interface PossessionCaseDto {
+  id: string;
+  tenancyId: string;
+  propertyAddress: string;
+  tenantNames: string[];
+  /** The reason relied on, in the landlord's words. */
+  ground: string;
+  stage: PossessionStage;
+  events: { date: IsoDate; stage: PossessionStage; note: string | null }[];
+}
+
+export interface TemplateDto {
+  id: string;
+  name: string;
+  body: string;
+}
+
 export interface UploadTicket {
   documentId: string;
   uploadUrl: string;
@@ -307,6 +374,26 @@ export function createApiClient(baseUrl: string, getIdToken: () => Promise<strin
 
     createTenancy: (input: NewTenancy) => request<TenancyDto>('POST', '/tenancies', input),
     updateTenancy: (id: string, input: { depositScheme?: string | null }) => request<TenancyDto>('PATCH', `/tenancies/${id}`, input),
+
+    recordRentChange: (tenancyId: string, input: { effectiveFrom: IsoDate; amountPence: number }) => request<TenancyDto>('POST', `/tenancies/${tenancyId}/rent-changes`, input),
+    endTenancy: (tenancyId: string, input: { endDate: IsoDate }) => request<TenancyDto>('POST', `/tenancies/${tenancyId}/end`, input),
+
+    saveAdvert: (propertyId: string, advert: AdvertDto | null) => request<PropertyDto>('PUT', `/properties/${propertyId}/advert`, advert),
+    /** Creates properties from spreadsheet rows pasted as CSV text. */
+    importProperties: (csv: string) => request<{ created: number; errors: string[] }>('POST', '/properties/import', { csv }),
+    listViewings: () => request<ViewingDto[]>('GET', '/viewings'),
+    addViewing: (input: { propertyId: string; name: string; contact: string | null; at: string }) => request<ViewingDto>('POST', '/viewings', input),
+    updateViewing: (id: string, input: { outcome?: ViewingOutcome; notes?: string }) => request<ViewingDto>('POST', `/viewings/${id}`, input),
+
+    listNotices: () => request<NoticeDto[]>('GET', '/notices'),
+    addNotice: (input: { tenancyId: string; kind: NoticeKind; servedOn: IsoDate; method: NoticeDto['method']; effectiveOn: IsoDate | null; notes: string | null }) =>
+      request<NoticeDto>('POST', '/notices', input),
+    listPossessionCases: () => request<PossessionCaseDto[]>('GET', '/possession-cases'),
+    openPossessionCase: (input: { tenancyId: string; ground: string; note?: string }) => request<PossessionCaseDto>('POST', '/possession-cases', input),
+    advancePossessionCase: (id: string, input: { stage: PossessionStage; note?: string }) => request<PossessionCaseDto>('POST', `/possession-cases/${id}`, input),
+
+    listTemplates: () => request<TemplateDto[]>('GET', '/templates'),
+    saveTemplate: (input: { id?: string; name: string; body: string }) => request<TemplateDto>('POST', '/templates', input),
 
     getInventory: (tenancyId: string) => request<InventoryDto>('GET', `/tenancies/${tenancyId}/inventory`),
     addInventoryItem: (tenancyId: string, input: { room: string; item: string; condition: Condition; note?: string }) =>

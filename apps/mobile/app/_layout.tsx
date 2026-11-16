@@ -38,6 +38,11 @@ function Screens() {
       <Stack.Screen name="tools/deposits" options={{ title: 'Deposit register' }} />
       <Stack.Screen name="tools/right-to-rent" options={{ title: 'Right to Rent' }} />
       <Stack.Screen name="inventory/[id]" options={{ title: 'Inventory' }} />
+      <Stack.Screen name="tools/lettings" options={{ title: 'Adverts and viewings' }} />
+      <Stack.Screen name="tools/notices" options={{ title: 'Notices and possession' }} />
+      <Stack.Screen name="tools/templates" options={{ title: 'Document templates' }} />
+      <Stack.Screen name="tools/import" options={{ title: 'Import properties' }} />
+      <Stack.Screen name="tools/account" options={{ title: 'Your account' }} />
     </Stack>
   );
 }

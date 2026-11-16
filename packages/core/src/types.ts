@@ -54,6 +54,8 @@ export interface RentTerms {
   endDate?: IsoDate;
   amountPence: number;
   frequency: RentFrequency;
+  /** Rent increases or reductions agreed since the start, each applying from its date. */
+  changes?: readonly { effectiveFrom: IsoDate; amountPence: number }[];
 }
 
 export interface RentCharge {

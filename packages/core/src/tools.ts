@@ -1,4 +1,4 @@
-import type { ComplianceItemDto, Condition, InventoryDto, InventoryItemDto, PropertyDto, RightToRentDto, TenancyDto } from './client.ts';
+import type { AdvertDto, ComplianceItemDto, Condition, ExpenseDto, InventoryDto, InventoryItemDto, MileageDto, PossessionStage, PropertyDto, RightToRentDto, TenancyDto } from './client.ts';
 import { addDays, addMonths, diffDays, type IsoDate } from './dates.ts';
 import { formatPence, type ArrearsSummary } from './rent/ledger.ts';
 import { monthlyEquivalentPence } from './rent/schedule.ts';
@@ -357,4 +357,164 @@ export function rightToRentState(check: Pick<RightToRentDto, 'expiresOn'>, today
   const daysLeft = diffDays(today, check.expiresOn);
   if (daysLeft < 0) return 'expired';
   return daysLeft <= 28 ? 'follow_up_due' : 'valid';
+}
+
+// --------------------------------------------------------- spreadsheet import
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]!;
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',' || ch === '\t') {
+      cells.push(cell.trim());
+      cell = '';
+    } else cell += ch;
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
+const NATION_NAMES: Record<string, Nation> = { england: 'england', wales: 'wales', scotland: 'scotland', 'northern ireland': 'northern_ireland', northern_ireland: 'northern_ireland', ni: 'northern_ireland' };
+const yes = (text: string | undefined, fallback: boolean) => (text === undefined || text === '' ? fallback : /^(y|yes|true|1)$/i.test(text));
+
+/**
+ * Reads properties from rows copied out of a spreadsheet (comma or tab
+ * separated). Columns, in order: address, town, postcode, nation, gas (yes/no),
+ * HMO (yes/no). A first row of headings is skipped. Rows with problems are
+ * reported and left out.
+ */
+export function parsePropertiesCsv(text: string): { rows: Omit<PropertyDto, 'id'>[]; errors: string[] } {
+  const rows: Omit<PropertyDto, 'id'>[] = [];
+  const errors: string[] = [];
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+  lines.forEach((line, index) => {
+    const [address, town, postcode, nationText, gas, hmo] = parseCsvLine(line);
+    if (index === 0 && /^address/i.test(address ?? '')) return;
+    const nation = NATION_NAMES[(nationText ?? '').toLowerCase()];
+    const problems: string[] = [];
+    if (!address) problems.push('no address');
+    if (!town) problems.push('no town');
+    if (!postcode || postcode.length < 5 || postcode.length > 8) problems.push('postcode missing or not valid');
+    if (!nation) problems.push('nation must be England, Wales, Scotland or Northern Ireland');
+    if (problems.length > 0 || !address || !town || !postcode || !nation) {
+      errors.push(`Row ${index + 1}: ${problems.join('; ')}`);
+      return;
+    }
+    rows.push({ addressLine1: address, addressLine2: null, town, postcode: postcode.toUpperCase(), nation, hasGas: yes(gas, true), isHmo: yes(hmo, false) });
+  });
+  return { rows, errors };
+}
+
+// ------------------------------------------------------------------ adverts
+/** Advert wording to paste into a listing site or share directly. */
+export function advertText(property: PropertyDto, advert: AdvertDto): string {
+  return [
+    advert.headline,
+    '',
+    `${property.town} ${property.postcode.split(' ')[0] ?? ''}`.trim(),
+    `Rent: ${formatPence(advert.rentPence)} a month`,
+    `Available from: ${advert.availableFrom}`,
+    '',
+    advert.description,
+    '',
+    'The rent shown is the rent: offers above it cannot be invited or accepted.',
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------- possession
+export const POSSESSION_STAGES: readonly PossessionStage[] = [
+  'notice_served', 'notice_expired', 'claim_issued', 'hearing_listed', 'order_made', 'enforcement_requested', 'possession_recovered',
+];
+
+export const POSSESSION_STAGE_LABEL: Record<PossessionStage, string> = {
+  notice_served: 'Notice served',
+  notice_expired: 'Notice period ended',
+  claim_issued: 'Court or tribunal claim issued',
+  hearing_listed: 'Hearing listed',
+  order_made: 'Possession order made',
+  enforcement_requested: 'Enforcement requested',
+  possession_recovered: 'Possession recovered',
+  withdrawn: 'Withdrawn or settled',
+};
+
+/** A case can move forward to any later stage, or be withdrawn; it cannot move backwards. */
+export function canAdvancePossession(from: PossessionStage, to: PossessionStage): boolean {
+  if (from === 'possession_recovered' || from === 'withdrawn') return false;
+  if (to === 'withdrawn') return true;
+  return POSSESSION_STAGES.indexOf(to) > POSSESSION_STAGES.indexOf(from);
+}
+
+// ------------------------------------------------------------------ templates
+/** Placeholders a landlord can use in their own document templates. */
+export const TEMPLATE_FIELDS = ['landlord_name', 'tenant_names', 'property_address', 'rent', 'rent_frequency', 'deposit', 'start_date', 'today'] as const;
+export type TemplateField = (typeof TEMPLATE_FIELDS)[number];
+
+export function templateValues(tenancy: TenancyDto, landlordName: string, today: IsoDate): Record<TemplateField, string> {
+  return {
+    landlord_name: landlordName,
+    tenant_names: tenancy.tenantNames.join(' and '),
+    property_address: tenancy.propertyAddress,
+    rent: formatPence(tenancy.rentAmountPence),
+    rent_frequency: tenancy.rentFrequency.replace('_', ' '),
+    deposit: formatPence(tenancy.depositPence),
+    start_date: tenancy.startDate,
+    today,
+  };
+}
+
+/**
+ * Fills {{placeholders}} in a template. Returns the text and any placeholders
+ * it did not recognise, which are left in place so they are easy to spot.
+ */
+export function fillTemplate(body: string, values: Record<string, string>): { text: string; unknown: string[] } {
+  const unknown = new Set<string>();
+  const text = body.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (whole, name: string) => {
+    const key = name.toLowerCase();
+    if (Object.hasOwn(values, key)) return values[key]!;
+    unknown.add(key);
+    return whole;
+  });
+  return { text, unknown: [...unknown] };
+}
+
+// ---------------------------------------------------------------------- packs
+/** A property's compliance position as text, to send to a lender, insurer or council. */
+export function compliancePack(property: PropertyDto, items: readonly ComplianceItemDto[], today: IsoDate): string {
+  const lines = [`COMPLIANCE SUMMARY: ${property.addressLine1}, ${property.town} ${property.postcode}`, `As at ${today}`, ''];
+  for (const item of items.filter((i) => i.propertyId === property.id && !i.upcoming)) {
+    const due = item.expiresOn ?? item.dueDate;
+    lines.push(`- ${item.title}: ${item.status.replace('_', ' ').toUpperCase()}${item.completedOn ? `, last done ${item.completedOn}` : ''}${due ? `, due ${due}` : ''}`);
+  }
+  return lines.join('\n');
+}
+
+/** The tax year's figures and every expense and trip behind them, for an accountant. */
+export function accountantPack(summary: FinanceSummary, expenses: readonly ExpenseDto[], mileage: readonly MileageDto[]): string {
+  const within = (date: IsoDate) => date >= summary.taxYear.start && date <= summary.taxYear.end;
+  const lines = [
+    `RENTAL INCOME AND EXPENSES, TAX YEAR ${summary.taxYear.label} (${summary.taxYear.start} to ${summary.taxYear.end})`,
+    '',
+    `Rent received: ${formatPence(summary.incomePence)}`,
+    `Allowable expenses: ${formatPence(summary.allowableExpensesPence)}`,
+    `Mileage: ${summary.miles} miles, ${formatPence(summary.mileagePence)}`,
+    `Profit before finance costs: ${formatPence(summary.profitPence)}`,
+    `Residential finance costs: ${formatPence(summary.financeCostsPence)}`,
+    '',
+    'EXPENSES',
+    'Date,Category,Description,Property,Amount',
+    ...expenses.filter((e) => within(e.date)).map((e) => [e.date, EXPENSE_CATEGORY_LABEL[e.category], e.description, e.propertyAddress ?? 'Whole portfolio', (e.amountPence / 100).toFixed(2)].map(csvCell).join(',')),
+    '',
+    'MILEAGE',
+    'Date,Purpose,Miles',
+    ...mileage.filter((m) => within(m.date)).map((m) => [m.date, m.purpose, m.miles].map(csvCell).join(',')),
+  ];
+  return lines.join('\n');
 }

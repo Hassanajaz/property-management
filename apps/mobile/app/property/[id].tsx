@@ -1,7 +1,8 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { formatPence, propertyMoney, today, yearlyRentPence, type PropertyDto, type RentFrequency, type TenancyDto } from '@lettly/core';
+import { compliancePack, formatPence, propertyMoney, today, yearlyRentPence, type PropertyDto, type RentFrequency, type TenancyDto } from '@lettly/core';
+import { shareText } from '../../src/platform';
 import { percent, poundsToPence, useAction } from '../../src/hooks';
 import { useSession } from '../../src/session';
 import { AddDocument, ApplicationCard, ComplianceCard, DocumentRow, RepairCard, TenancyCard, usePortfolioData } from '../../src/portfolio';
@@ -11,6 +12,7 @@ import { Button, Chip, StatusBadge, colors, styles } from '../../src/ui';
 export default function Property() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, loading, error, load } = usePortfolioData();
+  const [packNote, setPackNote] = useState<string | null>(null);
 
   const property = data?.properties.find((p) => p.id === id);
   const tenancies = data?.tenancies.filter((t) => t.propertyId === id) ?? [];
@@ -63,6 +65,8 @@ export default function Property() {
           {applications.map((a) => <ApplicationCard key={a.id} application={a} showAddress={false} onChanged={load} />)}
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Compliance</Text>
+          <Button title="Share a compliance summary" kind="secondary" onPress={async () => setPackNote(await shareText('Compliance summary', compliancePack(property, compliance, today())))} />
+          {packNote ? <Text style={styles.muted}>{packNote}</Text> : null}
           {compliance.map((i) => <ComplianceCard key={i.id} item={i} showAddress={false} onChanged={load} />)}
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Repairs</Text>

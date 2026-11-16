@@ -14,9 +14,13 @@ import {
   type MaintenanceRequestDto,
   type MaintenanceUpdateDto,
   type MileageDto,
+  type NoticeDto,
+  type PossessionCaseDto,
   type PropertyDto,
   type RightToRentDto,
+  type TemplateDto,
   type TenancyDto,
+  type ViewingDto,
 } from './client.ts';
 import { complianceScore, generateRequirements, nextDue, statusOf, type RequirementState } from './compliance/engine.ts';
 import { COMPLIANCE_RULES } from './compliance/rules.ts';
@@ -25,7 +29,8 @@ import { canTransition } from './maintenance.ts';
 import { TENANT_DOCUMENT_TYPES } from './portfolio.ts';
 import { affordability } from './referencing/affordability.ts';
 import { arrears } from './rent/ledger.ts';
-import { generateSchedule } from './rent/schedule.ts';
+import { generateSchedule, rentOn } from './rent/schedule.ts';
+import { canAdvancePossession, parsePropertiesCsv } from './tools.ts';
 import { isLandlord, type DocumentType, type Role } from './types.ts';
 
 /**
@@ -46,7 +51,11 @@ interface DemoItem {
   dueDate: IsoDate | null;
 }
 
-type DemoTenancy = Omit<TenancyDto, 'propertyAddress' | 'balancePence' | 'daysInArrears'> & { payments: LedgerPaymentDto[] };
+/** `rentAmountPence` is the rent at the start; later changes are listed in `rentChanges`. */
+type DemoTenancy = Omit<TenancyDto, 'propertyAddress' | 'balancePence' | 'daysInArrears' | 'rentLastChangedOn'> & {
+  payments: LedgerPaymentDto[];
+  rentChanges?: { effectiveFrom: IsoDate; amountPence: number }[];
+};
 
 /** Everything held for one landlord's account. Plain data, so it can be saved as JSON. */
 export interface DemoStore {
@@ -61,6 +70,10 @@ export interface DemoStore {
   mileage: MileageDto[];
   inventories: Record<string, InventoryItemDto[]>;
   rightToRent: RightToRentDto[];
+  viewings: ViewingDto[];
+  notices: NoticeDto[];
+  possessionCases: PossessionCaseDto[];
+  templates: TemplateDto[];
   items: DemoItem[];
   repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[]; tenancyId: string })[];
   nextId: number;
@@ -354,7 +367,29 @@ export function seedSampleStore(): DemoStore {
     { id: 'demo-rtr-2', tenancyId: TENANT_TENANCY_ID, tenantName: 'Tom Reed', propertyAddress: address(first), method: 'documents', checkedOn: addDays(tenancyStart, -5), expiresOn: null },
   ];
 
-  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, inventories, rightToRent, items, repairs, nextId: 100 };
+  fourth.advert = {
+    headline: 'Three-bedroom house with garage, close to schools',
+    description: 'Recently redecorated family home with a private garden, gas central heating and off-street parking. Unfurnished. Pets considered.',
+    rentPence: 130000,
+    availableFrom: addDays(now, 14),
+  };
+  const viewings: ViewingDto[] = [
+    { id: 'demo-viewing-1', propertyId: fourth.id, propertyAddress: address(fourth), name: 'Daniel Okafor', contact: '07700 900123', at: `${addDays(now, -9)}T17:30`, outcome: 'attended', notes: 'Keen. Applied the same evening.' },
+    { id: 'demo-viewing-2', propertyId: fourth.id, propertyAddress: address(fourth), name: 'Hannah Price', contact: 'hannah@example.com', at: `${addDays(now, -8)}T12:00`, outcome: 'attended', notes: null },
+    { id: 'demo-viewing-3', propertyId: fourth.id, propertyAddress: address(fourth), name: 'Mo Karim', contact: '07700 900456', at: `${addDays(now, 2)}T18:00`, outcome: 'booked', notes: null },
+  ];
+  const notices: NoticeDto[] = [
+    { id: 'demo-notice-1', tenancyId: 'demo-tenancy-2', propertyAddress: address(second), tenantNames: ['Megan Lloyd'], kind: 'access', servedOn: addDays(now, -1), method: 'email', effectiveOn: addDays(now, 5), notes: 'Notice of inspection visit.' },
+  ];
+  const templates: TemplateDto[] = [
+    {
+      id: 'demo-template-1',
+      name: 'Inspection visit letter',
+      body: 'Dear {{tenant_names}},\n\nI would like to visit {{property_address}} to carry out a routine inspection. I will confirm the date and time with you at least 24 hours beforehand.\n\nPlease let me know if there is anything you would like me to look at while I am there.\n\nKind regards,\n{{landlord_name}}\n{{today}}',
+    },
+  ];
+
+  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, inventories, rightToRent, viewings, notices, possessionCases: [], templates, items, repairs, nextId: 100 };
 }
 
 function demoStore(): DemoStore {
@@ -371,7 +406,7 @@ export function resetDemo(): void {
 export function emptyStore(): DemoStore {
   return {
     properties: [], tenancies: [], documents: [], applications: [], contractors: [], keys: [], inspections: [],
-    expenses: [], mileage: [], inventories: {}, rightToRent: [], items: [], repairs: [], nextId: 100,
+    expenses: [], mileage: [], inventories: {}, rightToRent: [], viewings: [], notices: [], possessionCases: [], templates: [], items: [], repairs: [], nextId: 100,
   };
 }
 
@@ -389,6 +424,12 @@ export function createDemoApi(role: Role): ApiClient {
  * database file after every change.
  */
 export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
+  // Accounts saved before a feature existed will not have its list yet.
+  s.viewings ??= [];
+  s.notices ??= [];
+  s.possessionCases ??= [];
+  s.templates ??= [];
+
   const role: Role = viewer.role;
   const landlord = isLandlord(role);
   const ownTenancyIds: readonly string[] = viewer.role === 'tenant' ? viewer.tenancyIds : [];
@@ -438,9 +479,9 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
     return repair;
   };
 
-  const ledgerCharges = (tenancy: Pick<DemoTenancy, 'startDate' | 'endDate' | 'rentAmountPence' | 'rentFrequency'>, onDate: IsoDate) =>
+  const ledgerCharges = (tenancy: Pick<DemoTenancy, 'startDate' | 'endDate' | 'rentAmountPence' | 'rentFrequency' | 'rentChanges'>, onDate: IsoDate) =>
     generateSchedule(
-      { startDate: tenancy.startDate, endDate: tenancy.endDate ?? undefined, amountPence: tenancy.rentAmountPence, frequency: tenancy.rentFrequency },
+      { startDate: tenancy.startDate, endDate: tenancy.endDate ?? undefined, amountPence: tenancy.rentAmountPence, frequency: tenancy.rentFrequency, changes: tenancy.rentChanges },
       onDate,
     );
 
@@ -448,7 +489,37 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
     const onDate = today();
     const summary = arrears(ledgerCharges(tenancy, onDate), payments, onDate);
     const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
-    return { ...tenancy, propertyAddress: address(property), balancePence: summary.balancePence, daysInArrears: summary.daysInArrears };
+    const { rentChanges = [], ...rest } = tenancy;
+    const applied = rentChanges.filter((c) => c.effectiveFrom <= onDate).map((c) => c.effectiveFrom).sort();
+    return {
+      ...rest,
+      // A tenancy whose end date has passed is over, even if nobody has marked it.
+      status: rest.endDate !== null && rest.endDate < onDate ? 'ended' : rest.status,
+      rentAmountPence: rentOn({ amountPence: tenancy.rentAmountPence, changes: rentChanges }, onDate),
+      rentLastChangedOn: applied.at(-1) ?? tenancy.startDate,
+      propertyAddress: address(property),
+      balancePence: summary.balancePence,
+      daysInArrears: summary.daysInArrears,
+    };
+  };
+
+  const tenancyFor = (tenancyId: string) => {
+    const tenancy = s.tenancies.find((t) => t.id === tenancyId);
+    const property = s.properties.find((p) => p.id === tenancy?.propertyId);
+    if (!tenancy || !property) throw new ApiError(404, 'Tenancy not found');
+    return { tenancy, property };
+  };
+
+  const addProperty = (input: Omit<PropertyDto, 'id'>): PropertyDto => {
+    const property: PropertyDto = { ...input, id: `demo-property-${(s.nextId += 1)}` };
+    s.properties.push(property);
+    for (const requirement of generateRequirements(
+      { nation: property.nation, scope: 'property', facts: { hasGas: property.hasGas, isHmo: property.isHmo } },
+      today(),
+    )) {
+      s.items.push({ id: `demo-item-${(s.nextId += 1)}`, ruleId: requirement.ruleId, propertyId: property.id, tenancyId: null, completedOn: null, expiresOn: null, dueDate: null });
+    }
+    return property;
   };
 
   const inventoryDto = (tenancyId: string): InventoryDto => {
@@ -469,15 +540,7 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
 
     createProperty: async (input) => {
       if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
-      const property: PropertyDto = { ...input, id: `demo-property-${(s.nextId += 1)}` };
-      s.properties.push(property);
-      for (const requirement of generateRequirements(
-        { nation: property.nation, scope: 'property', facts: { hasGas: property.hasGas, isHmo: property.isHmo } },
-        today(),
-      )) {
-        s.items.push({ id: `demo-item-${(s.nextId += 1)}`, ruleId: requirement.ruleId, propertyId: property.id, tenancyId: null, completedOn: null, expiresOn: null, dueDate: null });
-      }
-      return property;
+      return addProperty(input);
     },
 
     listCompliance: async () => {
@@ -566,15 +629,107 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
       return withoutUpdates(repair);
     },
 
-    listTenancies: async () => {
-      const onDate = today();
-      return s.tenancies
-        .filter((tenancy) => canSeeTenancy(tenancy.id))
-        .map(({ payments, ...tenancy }) => {
-          const summary = arrears(ledgerCharges(tenancy, onDate), payments, onDate);
-          const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
-          return { ...tenancy, propertyAddress: address(property), balancePence: summary.balancePence, daysInArrears: summary.daysInArrears };
-        });
+    listTenancies: async () => s.tenancies.filter((tenancy) => canSeeTenancy(tenancy.id)).map(tenancyDto),
+
+    recordRentChange: async (tenancyId, input) => {
+      onlyLandlord();
+      const { tenancy } = tenancyFor(tenancyId);
+      if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new ApiError(400, 'Enter the new rent');
+      if (input.effectiveFrom <= tenancy.startDate) throw new ApiError(400, 'The new rent must start after the tenancy began');
+      (tenancy.rentChanges ??= []).push({ effectiveFrom: input.effectiveFrom, amountPence: input.amountPence });
+      return tenancyDto(tenancy);
+    },
+
+    endTenancy: async (tenancyId, input) => {
+      onlyLandlord();
+      const { tenancy } = tenancyFor(tenancyId);
+      if (input.endDate < tenancy.startDate) throw new ApiError(400, 'The end date is before the tenancy began');
+      tenancy.endDate = input.endDate;
+      if (input.endDate <= today()) tenancy.status = 'ended';
+      return tenancyDto(tenancy);
+    },
+
+    saveAdvert: async (propertyId, advert) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === propertyId);
+      if (!property) throw new ApiError(404, 'Property not found');
+      if (advert && (!advert.headline.trim() || !Number.isInteger(advert.rentPence) || advert.rentPence <= 0)) throw new ApiError(400, 'Enter a headline and the rent');
+      property.advert = advert;
+      return property;
+    },
+
+    importProperties: async (csv) => {
+      onlyLandlord();
+      const { rows, errors } = parsePropertiesCsv(csv);
+      for (const row of rows) addProperty(row);
+      return { created: rows.length, errors };
+    },
+
+    listViewings: async () => (onlyLandlord(), [...s.viewings].sort((a, b) => a.at.localeCompare(b.at))),
+    addViewing: async (input) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === input.propertyId);
+      if (!property) throw new ApiError(404, 'Property not found');
+      if (!input.name.trim() || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.at)) throw new ApiError(400, 'Enter who is viewing, and the date and time');
+      const viewing: ViewingDto = { id: `demo-viewing-${(s.nextId += 1)}`, propertyId: property.id, propertyAddress: address(property), name: input.name.trim(), contact: input.contact, at: input.at, outcome: 'booked', notes: null };
+      s.viewings.push(viewing);
+      return viewing;
+    },
+    updateViewing: async (id, input) => {
+      onlyLandlord();
+      const viewing = s.viewings.find((v) => v.id === id);
+      if (!viewing) throw new ApiError(404, 'Viewing not found');
+      if (input.outcome) viewing.outcome = input.outcome;
+      if (input.notes !== undefined) viewing.notes = input.notes.trim() || null;
+      return viewing;
+    },
+
+    listNotices: async () => (onlyLandlord(), [...s.notices].sort((a, b) => b.servedOn.localeCompare(a.servedOn))),
+    addNotice: async (input) => {
+      onlyLandlord();
+      const { tenancy, property } = tenancyFor(input.tenancyId);
+      const notice: NoticeDto = { ...input, id: `demo-notice-${(s.nextId += 1)}`, propertyAddress: address(property), tenantNames: tenancy.tenantNames };
+      s.notices.push(notice);
+      return notice;
+    },
+    listPossessionCases: async () => (onlyLandlord(), [...s.possessionCases]),
+    openPossessionCase: async (input) => {
+      onlyLandlord();
+      const { tenancy, property } = tenancyFor(input.tenancyId);
+      if (!input.ground.trim()) throw new ApiError(400, 'Say what the reason for seeking possession is');
+      if (s.possessionCases.some((c) => c.tenancyId === tenancy.id && c.stage !== 'withdrawn' && c.stage !== 'possession_recovered')) {
+        throw new ApiError(409, 'There is already an open case for this tenancy');
+      }
+      const possessionCase: PossessionCaseDto = {
+        id: `demo-case-${(s.nextId += 1)}`, tenancyId: tenancy.id, propertyAddress: address(property), tenantNames: tenancy.tenantNames,
+        ground: input.ground.trim(), stage: 'notice_served', events: [{ date: today(), stage: 'notice_served', note: input.note?.trim() || null }],
+      };
+      s.possessionCases.push(possessionCase);
+      return possessionCase;
+    },
+    advancePossessionCase: async (id, input) => {
+      onlyLandlord();
+      const possessionCase = s.possessionCases.find((c) => c.id === id);
+      if (!possessionCase) throw new ApiError(404, 'Case not found');
+      if (!canAdvancePossession(possessionCase.stage, input.stage)) throw new ApiError(409, 'A case can only move forward to a later stage, or be withdrawn');
+      possessionCase.stage = input.stage;
+      possessionCase.events.push({ date: today(), stage: input.stage, note: input.note?.trim() || null });
+      return possessionCase;
+    },
+
+    listTemplates: async () => (onlyLandlord(), [...s.templates]),
+    saveTemplate: async (input) => {
+      onlyLandlord();
+      if (!input.name.trim() || !input.body.trim()) throw new ApiError(400, 'Give the template a name and some text');
+      const existing = input.id ? s.templates.find((t) => t.id === input.id) : undefined;
+      if (existing) {
+        existing.name = input.name.trim();
+        existing.body = input.body;
+        return existing;
+      }
+      const template: TemplateDto = { id: `demo-template-${(s.nextId += 1)}`, name: input.name.trim(), body: input.body };
+      s.templates.push(template);
+      return template;
     },
 
     getLedger: async (tenancyId) => {

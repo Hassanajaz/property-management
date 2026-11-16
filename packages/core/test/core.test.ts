@@ -465,3 +465,94 @@ test('inventories, right to rent and new tenancies', async () => {
   const withScheme = await landlord.updateTenancy(created.id, { depositScheme: 'mydeposits' });
   assert.equal(withScheme.depositScheme, 'mydeposits');
 });
+
+test('rent changes apply from their date and move the rent review', async () => {
+  const { rentOn, rentReview } = await import('../src/index.ts');
+  const terms = { startDate: '2026-01-01', amountPence: 100000, frequency: 'monthly' as const, changes: [{ effectiveFrom: '2026-04-01', amountPence: 105000 }] };
+  assert.equal(rentOn(terms, '2026-03-31'), 100000);
+  assert.equal(rentOn(terms, '2026-04-01'), 105000);
+  const charges = generateSchedule(terms, '2026-05-31');
+  assert.deepEqual(charges.map((c) => c.amountPence), [100000, 100000, 100000, 105000, 105000]);
+  assert.equal(rentReview('england', '2026-04-01', '2026-11-16').earliestEffectiveDate, '2027-04-01');
+});
+
+test('spreadsheet import, templates, adverts, possession stages and packs', async () => {
+  const { parsePropertiesCsv, fillTemplate, templateValues, advertText, canAdvancePossession, compliancePack, accountantPack, financeSummary, taxYearOf, createDemoApi, resetDemo } = await import('../src/index.ts');
+
+  const parsed = parsePropertiesCsv('Address,Town,Postcode,Nation,Gas,HMO\n"Flat 2, 9 High Street",York,YO1 8QP,England,yes,no\n4 Mill Lane\tCardiff\tCF5 1AA\tWales\tno\tyes\n,Leeds,LS1 1AA,England\n7 Hill Road,Perth,PH1 5AA,Narnia');
+  assert.equal(parsed.rows.length, 2);
+  assert.equal(parsed.rows[0]!.addressLine1, 'Flat 2, 9 High Street');
+  assert.deepEqual([parsed.rows[1]!.nation, parsed.rows[1]!.hasGas, parsed.rows[1]!.isHmo], ['wales', false, true]);
+  assert.equal(parsed.errors.length, 2);
+  assert.ok(parsed.errors[0]!.startsWith('Row 4') && parsed.errors[1]!.includes('nation'));
+
+  const filled = fillTemplate('Dear {{tenant_names}}, rent is {{ rent }} for {{property_address}}. {{made_up}}', { tenant_names: 'A and B', rent: '£900.00', property_address: '1 Test St' });
+  assert.equal(filled.text, 'Dear A and B, rent is £900.00 for 1 Test St. {{made_up}}');
+  assert.deepEqual(filled.unknown, ['made_up']);
+
+  assert.equal(canAdvancePossession('notice_served', 'claim_issued'), true);
+  assert.equal(canAdvancePossession('claim_issued', 'notice_served'), false);
+  assert.equal(canAdvancePossession('order_made', 'withdrawn'), true);
+  assert.equal(canAdvancePossession('possession_recovered', 'withdrawn'), false);
+
+  resetDemo();
+  const landlord = createDemoApi('landlord');
+  const tenant = createDemoApi('tenant');
+
+  // Import adds properties with their requirements.
+  const imported = await landlord.importProperties('12 Oak Avenue,Leeds,LS8 2AB,England,yes,no\nbad row');
+  assert.equal(imported.created, 1);
+  assert.equal(imported.errors.length, 1);
+  const properties = await landlord.listProperties();
+  assert.equal(properties.length, 5);
+  const oak = properties.find((p) => p.addressLine1 === '12 Oak Avenue')!;
+  assert.ok((await landlord.listCompliance()).items.some((i) => i.propertyId === oak.id && i.ruleId === 'gas_safety.gb'));
+  await assert.rejects(() => tenant.importProperties('x'));
+
+  // Advert and viewings.
+  const vacant = properties.find((p) => p.id === 'demo-property-4')!;
+  assert.ok(advertText(vacant, vacant.advert!).includes('£1,300.00 a month'));
+  await landlord.saveAdvert(oak.id, { headline: 'Two-bed terrace', description: 'Near the park.', rentPence: 95000, availableFrom: today() });
+  await assert.rejects(() => landlord.addViewing({ propertyId: oak.id, name: 'Jo', contact: null, at: 'tomorrow' }));
+  const viewing = await landlord.addViewing({ propertyId: oak.id, name: 'Jo Bloggs', contact: null, at: `${today()}T18:00` });
+  assert.equal((await landlord.updateViewing(viewing.id, { outcome: 'attended', notes: 'Liked it' })).outcome, 'attended');
+  assert.equal((await landlord.listViewings()).length, 4);
+
+  // Rent change, then ending a tenancy frees the property.
+  const changed = await landlord.recordRentChange('demo-tenancy-3', { effectiveFrom: today(), amountPence: 76000 });
+  assert.equal(changed.rentAmountPence, 76000);
+  assert.equal(changed.rentLastChangedOn, today());
+  await assert.rejects(() => landlord.recordRentChange('demo-tenancy-3', { effectiveFrom: '2020-01-01', amountPence: 1 }));
+  const ended = await landlord.endTenancy('demo-tenancy-3', { endDate: today() });
+  assert.equal(ended.status, 'ended');
+  await landlord.createTenancy({ propertyId: 'demo-property-3', startDate: today(), rentAmountPence: 80000, rentFrequency: 'monthly', depositPence: 0, tenants: [{ name: 'New Person', email: 'n@example.com' }] });
+
+  // Notices and a possession case that only moves forward.
+  await landlord.addNotice({ tenancyId: 'demo-tenancy-2', kind: 'rent_increase', servedOn: today(), method: 'post', effectiveOn: addMonths(today(), 2), notes: null });
+  assert.equal((await landlord.listNotices()).length, 2);
+  const opened = await landlord.openPossessionCase({ tenancyId: 'demo-tenancy-2', ground: 'Rent arrears' });
+  await assert.rejects(() => landlord.openPossessionCase({ tenancyId: 'demo-tenancy-2', ground: 'Again' }));
+  await landlord.advancePossessionCase(opened.id, { stage: 'claim_issued', note: 'Claim sent' });
+  await assert.rejects(() => landlord.advancePossessionCase(opened.id, { stage: 'notice_expired' }));
+  assert.equal((await landlord.advancePossessionCase(opened.id, { stage: 'withdrawn', note: 'Arrears cleared' })).events.length, 3);
+  await assert.rejects(() => tenant.listNotices());
+
+  // Templates.
+  const template = (await landlord.listTemplates())[0]!;
+  const tenancy = (await landlord.listTenancies()).find((t) => t.id === 'demo-tenancy-1')!;
+  const letter = fillTemplate(template.body, templateValues(tenancy, 'Sam Landlord', today()));
+  assert.ok(letter.text.includes('Dear Priya Shah and Tom Reed') && letter.text.includes('14 Maple Road'));
+  assert.deepEqual(letter.unknown, []);
+  const saved = await landlord.saveTemplate({ name: 'Thank you note', body: 'Thanks {{tenant_names}}' });
+  assert.equal((await landlord.saveTemplate({ id: saved.id, name: 'Thank you', body: 'Thank you {{tenant_names}}' })).name, 'Thank you');
+  assert.equal((await landlord.listTemplates()).length, 2);
+
+  // Packs.
+  const pack = compliancePack(properties[0]!, (await landlord.listCompliance()).items, today());
+  assert.ok(pack.includes('14 Maple Road') && pack.includes('Gas safety record'));
+  const expenses = await landlord.listExpenses();
+  const mileage = await landlord.listMileage();
+  const summary = financeSummary({ payments: await landlord.listPayments(), expenses, mileage }, taxYearOf(today()));
+  const forAccountant = accountantPack(summary, expenses, mileage);
+  assert.ok(forAccountant.includes('EXPENSES') && forAccountant.includes('MILEAGE') && forAccountant.includes('Date,Category,Description,Property,Amount'));
+});

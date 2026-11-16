@@ -4,6 +4,7 @@ import {
   createDemoApi,
   createLocalClient,
   identityFrom,
+  localChangePassword,
   localInviteTenant,
   localSignIn,
   localSignUp,
@@ -55,6 +56,8 @@ interface SessionValue {
   signUpLocal: (input: { name: string; email: string; password: string; sample: boolean }) => Promise<void>;
   /** Local mode: give a tenant a sign-in. Returns the temporary password to pass on, or null if they already had one. */
   inviteTenant: (input: { tenancyId: string; name: string; email: string }) => Promise<string | null>;
+  /** Local mode: change the signed-in person's password. */
+  changePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -128,6 +131,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const token = storedRef.current?.local?.token;
         if (!token) throw new Error('Sign in required');
         return (await localInviteTenant(API_URL, token, input)).temporaryPassword;
+      },
+      changePassword: async (newPassword) => {
+        const token = storedRef.current?.local?.token;
+        if (!token) throw new Error('Sign in required');
+        await localChangePassword(API_URL, token, newPassword);
       },
       signOut: async () => {
         if (MODE === 'demo') setIdentity(null);

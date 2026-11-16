@@ -327,21 +327,23 @@ export function AddDocument({ properties, fixedPropertyId, onAdded }: { properti
       setMessage('Allow photo access in Settings to add documents.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-    const asset = result.canceled ? undefined : result.assets[0];
-    if (!asset) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsMultipleSelection: true, selectionLimit: 20 });
+    if (result.canceled || result.assets.length === 0) return;
 
     setBusy(true);
     try {
-      const contentType = asset.mimeType ?? 'image/jpeg';
-      const ticket = await api.requestUpload({ fileName: asset.fileName ?? `${type}-${Date.now()}.jpg`, contentType, type, propertyId });
-      if (ticket.uploadUrl) {
-        const file = await (await fetch(asset.uri)).blob();
-        const upload = await fetch(ticket.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
-        if (!upload.ok) throw new Error('The file could not be uploaded. Please try again.');
+      // Several photos can be chosen at once; each becomes its own document.
+      for (const asset of result.assets) {
+        const contentType = asset.mimeType ?? 'image/jpeg';
+        const ticket = await api.requestUpload({ fileName: asset.fileName ?? `${type}-${Date.now()}.jpg`, contentType, type, propertyId });
+        if (ticket.uploadUrl) {
+          const file = await (await fetch(asset.uri)).blob();
+          const upload = await fetch(ticket.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
+          if (!upload.ok) throw new Error('A file could not be uploaded. Please try again.');
+        }
       }
       setOpen(false);
-      setMessage('Document added.');
+      setMessage(result.assets.length === 1 ? 'Document added.' : `${result.assets.length} documents added.`);
       onAdded();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Could not add the document');
@@ -379,7 +381,7 @@ export function AddDocument({ properties, fixedPropertyId, onAdded }: { properti
         ))}
       </View>
       {message ? <Text style={styles.error}>{message}</Text> : null}
-      <Button title="Choose a photo of the document" onPress={pick} busy={busy} />
+      <Button title="Choose photos (one or several)" onPress={pick} busy={busy} />
       <Button title="Cancel" kind="secondary" onPress={() => setOpen(false)} />
     </View>
   );
@@ -397,6 +399,11 @@ const TOOLS: { href: string; title: string; hint: string }[] = [
   { href: '/tools/keys', title: 'Key register', hint: 'Where every key is, with each handover logged' },
   { href: '/tools/deposits', title: 'Deposit register', hint: 'Each deposit, its scheme and whether it is protected' },
   { href: '/tools/right-to-rent', title: 'Right to Rent', hint: 'Checks recorded and follow-ups due (England)' },
+  { href: '/tools/lettings', title: 'Adverts and viewings', hint: 'Advert wording for vacant homes and who is viewing' },
+  { href: '/tools/notices', title: 'Notices and possession', hint: 'A log of notices served and where any case has reached' },
+  { href: '/tools/templates', title: 'Document templates', hint: 'Your own letters and agreements, filled in per tenancy' },
+  { href: '/tools/import', title: 'Import properties', hint: 'Add many properties from a spreadsheet' },
+  { href: '/tools/account', title: 'Your account', hint: 'Sign-in details and password' },
 ];
 type Section = (typeof SECTIONS)[number];
 

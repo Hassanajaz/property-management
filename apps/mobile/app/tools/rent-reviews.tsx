@@ -17,8 +17,7 @@ export default function RentReviews() {
     .filter((t) => t.status === 'active')
     .map((tenancy) => {
       const property = data!.properties.find((p) => p.id === tenancy.propertyId);
-      // Rent is treated as last changed when the tenancy began; recording later increases is a planned addition.
-      return property ? { tenancy, review: rentReview(property.nation, tenancy.startDate, now) } : null;
+      return property ? { tenancy, review: rentReview(property.nation, tenancy.rentLastChangedOn ?? tenancy.startDate, now) } : null;
     })
     .filter((row) => row !== null)
     .sort((a, b) => a.review.serveNoticeBy.localeCompare(b.review.serveNoticeBy));
@@ -27,7 +26,7 @@ export default function RentReviews() {
     <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} />}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Text style={styles.muted}>
-        Rent can usually be increased no more than once every 12 months, with a notice period that depends on the nation. Dates assume the rent has not changed since the tenancy began. Check the current rules and use the official form before serving a notice.
+        Rent can usually be increased no more than once every 12 months, with a notice period that depends on the nation. Dates run from when each rent last changed (record a change on the tenancy's rent statement). Check the current rules and use the official form before serving a notice.
       </Text>
 
       {rows.map(({ tenancy, review }) => (

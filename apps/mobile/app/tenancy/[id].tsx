@@ -38,6 +38,9 @@ export default function RentStatement() {
   const [method, setMethod] = useState<(typeof METHODS)[number]['value']>('bank_transfer');
   const [formError, setFormError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [newRent, setNewRent] = useState('');
+  const [newRentFrom, setNewRentFrom] = useState('');
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const ledger = data?.ledger;
   const tenancy = data?.tenancy;
@@ -52,7 +55,7 @@ export default function RentStatement() {
     : [];
 
   const balance = ledger?.summary.balancePence ?? 0;
-  const review = tenancy && data?.property ? rentReview(data.property.nation, tenancy.startDate, now) : null;
+  const review = tenancy && data?.property ? rentReview(data.property.nation, tenancy.rentLastChangedOn ?? tenancy.startDate, now) : null;
 
   async function record() {
     const amountPence = poundsToPence(amount);
@@ -130,6 +133,51 @@ export default function RentStatement() {
               </Text>
             </View>
           ) : null}
+
+          {landlord && tenancy && tenancy.status === 'active' ? (
+            <View style={styles.card}>
+              <Text style={styles.h2}>Change the rent</Text>
+              <Text style={styles.muted}>Record a new rent once it has been properly agreed or the notice period has run. Charges from that date use the new amount.</Text>
+              <Text style={styles.label}>New rent in pounds</Text>
+              <TextInput style={styles.input} value={newRent} onChangeText={setNewRent} keyboardType="decimal-pad" />
+              <Text style={styles.label}>From (YYYY-MM-DD)</Text>
+              <TextInput style={styles.input} value={newRentFrom} onChangeText={setNewRentFrom} placeholder={review?.earliestEffectiveDate ?? now} autoCapitalize="none" />
+              <Button
+                title="Record rent change"
+                kind="secondary"
+                busy={save.busy}
+                onPress={async () => {
+                  const amountPence = poundsToPence(newRent);
+                  if (!amountPence || !/^\d{4}-\d{2}-\d{2}$/.test(newRentFrom)) {
+                    setFormError('Enter the new rent in pounds and the date it starts as YYYY-MM-DD.');
+                    return;
+                  }
+                  setFormError(null);
+                  if (await save.run(() => api.recordRentChange(id, { effectiveFrom: newRentFrom, amountPence }))) {
+                    setNewRent('');
+                    setNewRentFrom('');
+                    await reload();
+                  }
+                }}
+              />
+            </View>
+          ) : null}
+
+          {landlord && tenancy && tenancy.status === 'active' ? (
+            <View style={styles.card}>
+              <Text style={styles.h2}>End this tenancy</Text>
+              <Text style={styles.muted}>Use this once the tenant has moved out. The property becomes vacant and rent stops being charged from today.</Text>
+              {confirmEnd ? (
+                <>
+                  <Button title="Yes, the tenancy ended today" busy={save.busy} onPress={async () => (await save.run(() => api.endTenancy(id, { endDate: now }))) && (setConfirmEnd(false), reload())} />
+                  <Button title="Cancel" kind="secondary" onPress={() => setConfirmEnd(false)} />
+                </>
+              ) : (
+                <Button title="End tenancy" kind="secondary" onPress={() => setConfirmEnd(true)} />
+              )}
+            </View>
+          ) : null}
+          {tenancy && tenancy.status === 'ended' ? <Text style={styles.muted}>This tenancy ended on {tenancy.endDate}.</Text> : null}
 
           <Button title="Inventory and check-out" kind="secondary" onPress={() => router.push(`/inventory/${id}`)} />
           {note ? <Text style={styles.muted}>{note}</Text> : null}

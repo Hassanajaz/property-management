@@ -90,9 +90,13 @@ applicants and tools. From it the landlord can:
 - decide an applicant's referencing and make them the tenant;
 - start a tenancy on a vacant property, and log a repair themselves;
 - keep an inventory with check-in and check-out conditions and share the report;
-- use the tools: finance and tax-year figures with mileage, rent reviews,
-  inspections with the 24-hour notice check, contractors, the key register,
-  the deposit register and Right to Rent checks with follow-up dates. Data is shared between
+- record a rent change, end a tenancy, and share a compliance summary;
+- use the tools: finance and tax-year figures with mileage and an accountant
+  pack, rent reviews, inspections with the 24-hour notice check, contractors,
+  the key register, the deposit register, Right to Rent checks with follow-up
+  dates, adverts and viewings, a notices log and possession tracker, their own
+  document templates, importing properties from a spreadsheet, and their
+  account and password. Data is shared between
 the two while the app stays open: report a repair as the tenant, tap
 "Switch person", and handle it as the landlord.
 
@@ -158,7 +162,8 @@ npm run dev:mobile                    # or scan the QR code with Expo Go
 Every feature works on the local server and in demo mode. The landlord tools added most recently (contractors and work orders, keys,
 inspections, expenses, mileage, applicant decisions, property value and
 mortgage, the all-payments list, inventories, Right to Rent records, deposit
-scheme) have API methods
+scheme, rent changes, adverts, viewings, notices, possession cases, templates,
+spreadsheet import) have API methods
 defined in `packages/core/src/client.ts`, but the matching AWS routes and
 database tables are **not written yet**, so they will fail against a deployed
 AWS backend until those are added.
@@ -169,12 +174,15 @@ AWS backend until those are added.
 - Making Tax Digital submissions to HMRC: needs HMRC recognition as a software
   provider. The finance tool gives tax-year figures to copy across instead.
 - Xero, e-signatures, SMS reminders: each needs an account with that provider.
-- Section 8 and Section 13 notice drafts, deposit prescribed information,
-  tenancy agreements: legal documents that need solicitor-approved templates
-  for each nation.
-- Adverts and viewings, possession tracker, bulk upload,
-  spreadsheet import, reading dates off certificates, accountant read-only
-  access, AI advisor: not started.
+- Ready-made legal documents (Section 8 and Section 13 notices, deposit
+  prescribed information, tenancy agreements): these need solicitor-approved
+  wording for each nation. The app instead lets the landlord store their own
+  wording as templates and logs what has been served.
+- Reading dates off certificates automatically, and the AI advisor: each needs
+  an AI service connected.
+- Read-only access for an accountant: left out because there are only two kinds
+  of login. The finance tool shares an accountant pack instead.
+- PDF versions of the packs and reports: they are shared as text for now.
 
 ## Known gaps (next work, in order)
 

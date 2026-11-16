@@ -64,6 +64,7 @@ function TenantHome() {
 
       <View style={{ marginTop: 24, gap: 8 }}>
         <Text style={styles.muted}>Signed in as {identity?.email}</Text>
+        <Button title="Your account" kind="secondary" onPress={() => router.push('/tools/account')} />
         <Button title={demo ? 'Switch person' : 'Sign out'} kind="secondary" onPress={signOut} />
       </View>
     </ScrollView>
