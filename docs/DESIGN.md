@@ -4,7 +4,7 @@
 
 ## Summary
 
-This is a lettings platform for UK landlords: each landlord gets their own account to manage properties, tenancies, compliance, rent, referencing and documents, and invites their tenants to sign in. It ships as a web back office plus an iOS app, with Android later from the same mobile code.
+This is a lettings platform for UK landlords: each landlord gets their own account to manage properties, tenancies, compliance, rent, referencing and documents, and invites their tenants to sign in. It ships as one app that runs on iPhone and in a web browser, with Android later from the same code.
 
 | Decision | Choice | Why |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ This is a lettings platform for UK landlords: each landlord gets their own accou
 | Coverage | England, Wales, Scotland, Northern Ireland | Compliance rules are data per nation, not code per nation |
 | Rent | Collected in-app by Direct Debit | Each landlord connects their own GoCardless account; the platform never holds their money |
 | Hosting | AWS London region, serverless | Near-zero cost when idle; UK data residency |
-| Mobile | Expo (React Native) | One codebase for iOS and Android |
+| App | Expo (React Native) | One codebase for iPhone, web and Android |
 | Language | TypeScript everywhere | Shared rules and types across API, web and mobile |
 
 Two things to know up front. The AWS new-account allowance is $100 at sign-up plus up to $100 earned, so $200 rather than $300. And the compliance rules shipped in the code are a starting set that a lettings solicitor should review before other landlords rely on them.
@@ -140,9 +140,7 @@ One TypeScript codebase holds the API, the web app, the mobile app and a shared 
 
 ```mermaid
 flowchart TD
-  web["Web app<br/>React, served by CloudFront"] --> api
-  mobile["iOS and Android app<br/>Expo (React Native)"] --> api
-  portals["Tenant login, applicant forms<br/>Same web app, narrower access"] --> api
+  app["One app for iPhone, web and Android<br/>Expo (React Native); web build served by CloudFront"] --> api
   api["API<br/>API Gateway + Lambda (Hono)"] --> signin["Sign-in<br/>Amazon Cognito"]
   api <--> payments["Payments<br/>GoCardless, Stripe (external)"]
   api --> db["Database<br/>Aurora PostgreSQL Serverless"]
@@ -160,8 +158,7 @@ Web, mobile and portal users all go through the same API, which checks the sign-
 | Data access | Drizzle ORM | Typed queries and migrations in TypeScript |
 | Sign-in | Amazon Cognito | Email sign-in, multi-factor, account and role carried in the token |
 | Files | S3 with pre-signed links | Uploads go straight from device to storage; private by default |
-| Web | React with Vite, hosted on S3 and CloudFront | Larger tables and bulk actions suit a desktop screen |
-| Mobile | Expo (React Native) with Expo Router | One codebase for iOS now and Android later; camera upload for certificates and inspections |
+| App | Expo (React Native) with Expo Router | One set of screens for iPhone, web and later Android, so every feature reaches all three at once. The web build is hosted on S3 and CloudFront |
 | Infrastructure | AWS CDK in TypeScript | The whole environment is created and destroyed from code |
 
 The iOS app needs an Apple Developer account before it can go to TestFlight or the App Store. Until then it runs on your own phone through Expo Go.

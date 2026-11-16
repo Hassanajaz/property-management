@@ -204,6 +204,46 @@ export interface IncomePaymentDto {
   amountPence: number;
 }
 
+export type Condition = 'new' | 'good' | 'fair' | 'poor' | 'damaged';
+
+export interface InventoryItemDto {
+  id: string;
+  room: string;
+  item: string;
+  checkIn: Condition;
+  checkInNote: string | null;
+  /** Null until the check-out inspection records it. */
+  checkOut: Condition | null;
+  checkOutNote: string | null;
+}
+
+export interface InventoryDto {
+  tenancyId: string;
+  propertyAddress: string;
+  tenantNames: string[];
+  items: InventoryItemDto[];
+}
+
+export interface RightToRentDto {
+  id: string;
+  tenancyId: string;
+  tenantName: string;
+  propertyAddress: string;
+  method: 'documents' | 'share_code';
+  checkedOn: IsoDate;
+  /** Set when the person's permission to be in the UK is time-limited. */
+  expiresOn: IsoDate | null;
+}
+
+export interface NewTenancy {
+  propertyId: string;
+  startDate: IsoDate;
+  rentAmountPence: number;
+  rentFrequency: RentFrequency;
+  depositPence: number;
+  tenants: { name: string; email: string }[];
+}
+
 export interface UploadTicket {
   documentId: string;
   uploadUrl: string;
@@ -264,6 +304,19 @@ export function createApiClient(baseUrl: string, getIdToken: () => Promise<strin
     recordPayment: (tenancyId: string, input: { date: IsoDate; amountPence: number; method: 'bank_transfer' | 'cash' | 'benefit' | 'other' }) =>
       request<LedgerPaymentDto>('POST', `/tenancies/${tenancyId}/payments`, input),
     listPayments: () => request<IncomePaymentDto[]>('GET', '/payments'),
+
+    createTenancy: (input: NewTenancy) => request<TenancyDto>('POST', '/tenancies', input),
+    updateTenancy: (id: string, input: { depositScheme?: string | null }) => request<TenancyDto>('PATCH', `/tenancies/${id}`, input),
+
+    getInventory: (tenancyId: string) => request<InventoryDto>('GET', `/tenancies/${tenancyId}/inventory`),
+    addInventoryItem: (tenancyId: string, input: { room: string; item: string; condition: Condition; note?: string }) =>
+      request<InventoryDto>('POST', `/tenancies/${tenancyId}/inventory`, input),
+    recordCheckOut: (tenancyId: string, itemId: string, input: { condition: Condition; note?: string }) =>
+      request<InventoryDto>('POST', `/tenancies/${tenancyId}/inventory/${itemId}/check-out`, input),
+
+    listRightToRent: () => request<RightToRentDto[]>('GET', '/right-to-rent'),
+    recordRightToRent: (input: { tenancyId: string; tenantName: string; method: RightToRentDto['method']; checkedOn: IsoDate; expiresOn: IsoDate | null }) =>
+      request<RightToRentDto>('POST', '/right-to-rent', input),
 
     listContractors: () => request<ContractorDto[]>('GET', '/contractors'),
     addContractor: (input: Omit<ContractorDto, 'id'>) => request<ContractorDto>('POST', '/contractors', input),

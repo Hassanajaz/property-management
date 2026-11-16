@@ -35,6 +35,9 @@ function Screens() {
       <Stack.Screen name="tools/inspections" options={{ title: 'Inspections' }} />
       <Stack.Screen name="tools/contractors" options={{ title: 'Contractors' }} />
       <Stack.Screen name="tools/keys" options={{ title: 'Key register' }} />
+      <Stack.Screen name="tools/deposits" options={{ title: 'Deposit register' }} />
+      <Stack.Screen name="tools/right-to-rent" options={{ title: 'Right to Rent' }} />
+      <Stack.Screen name="inventory/[id]" options={{ title: 'Inventory' }} />
     </Stack>
   );
 }

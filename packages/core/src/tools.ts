@@ -1,4 +1,4 @@
-import type { ComplianceItemDto, PropertyDto, TenancyDto } from './client.ts';
+import type { ComplianceItemDto, Condition, InventoryDto, InventoryItemDto, PropertyDto, RightToRentDto, TenancyDto } from './client.ts';
 import { addDays, addMonths, diffDays, type IsoDate } from './dates.ts';
 import { formatPence, type ArrearsSummary } from './rent/ledger.ts';
 import { monthlyEquivalentPence } from './rent/schedule.ts';
@@ -309,4 +309,52 @@ export function propertiesCsv(properties: readonly PropertyDto[], tenancies: rea
     ];
   });
   return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+}
+
+// --------------------------------------------------------------- inventories
+export const CONDITIONS: readonly Condition[] = ['new', 'good', 'fair', 'poor', 'damaged'];
+export const CONDITION_LABEL: Record<Condition, string> = { new: 'New', good: 'Good', fair: 'Fair', poor: 'Poor', damaged: 'Damaged' };
+
+/** Items whose condition at check-out is worse than at check-in. */
+export function inventoryChanges(items: readonly InventoryItemDto[]): InventoryItemDto[] {
+  return items.filter((item) => item.checkOut !== null && CONDITIONS.indexOf(item.checkOut) > CONDITIONS.indexOf(item.checkIn));
+}
+
+/**
+ * Check-in and check-out report as plain text, ending with the items that got
+ * worse. Useful as the starting point for a deposit discussion or dispute;
+ * fair wear and tear is not the tenant's responsibility.
+ */
+export function inventoryReport(inventory: InventoryDto): string {
+  const rooms = [...new Set(inventory.items.map((i) => i.room))];
+  const lines: string[] = [`INVENTORY: ${inventory.propertyAddress}`, `Tenants: ${inventory.tenantNames.join(' and ')}`, ''];
+  for (const room of rooms) {
+    lines.push(room.toUpperCase());
+    for (const item of inventory.items.filter((i) => i.room === room)) {
+      const out = item.checkOut ? `, check-out: ${CONDITION_LABEL[item.checkOut]}${item.checkOutNote ? ` (${item.checkOutNote})` : ''}` : '';
+      lines.push(`- ${item.item}. Check-in: ${CONDITION_LABEL[item.checkIn]}${item.checkInNote ? ` (${item.checkInNote})` : ''}${out}`);
+    }
+    lines.push('');
+  }
+  const worse = inventoryChanges(inventory.items);
+  lines.push(`ITEMS IN WORSE CONDITION AT CHECK-OUT: ${worse.length}`);
+  for (const item of worse) {
+    lines.push(`- ${item.room}: ${item.item}. ${CONDITION_LABEL[item.checkIn]} to ${CONDITION_LABEL[item.checkOut!]}${item.checkOutNote ? ` (${item.checkOutNote})` : ''}`);
+  }
+  if (worse.length > 0) lines.push('', 'Allow for fair wear and tear before proposing any deduction from the deposit.');
+  return lines.join('\n');
+}
+
+// ------------------------------------------------------------- right to rent
+export type RightToRentState = 'valid' | 'follow_up_due' | 'expired';
+
+/**
+ * A check on someone with time-limited permission needs a follow-up check
+ * before that permission runs out. This flags it from 28 days before.
+ */
+export function rightToRentState(check: Pick<RightToRentDto, 'expiresOn'>, today: IsoDate): RightToRentState {
+  if (!check.expiresOn) return 'valid';
+  const daysLeft = diffDays(today, check.expiresOn);
+  if (daysLeft < 0) return 'expired';
+  return daysLeft <= 28 ? 'follow_up_due' : 'valid';
 }

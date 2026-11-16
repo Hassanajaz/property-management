@@ -1,8 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, ScrollView, Text, TextInput, View } from 'react-native';
-import type { MaintenanceCategory, MaintenanceUrgency } from '@lettly/core';
+import { isLandlord, type MaintenanceCategory, type MaintenanceUrgency, type TenancyDto } from '@lettly/core';
 import { useSession } from '../src/session';
 import { Button, Chip, styles } from '../src/ui';
 
@@ -32,7 +32,10 @@ interface Photo {
 }
 
 export default function ReportRepair() {
-  const { api } = useSession();
+  const { api, identity } = useSession();
+  const landlord = identity ? isLandlord(identity.role) : false;
+  const [tenancies, setTenancies] = useState<TenancyDto[]>([]);
+  const [tenancyId, setTenancyId] = useState<string | undefined>(undefined);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<MaintenanceCategory>('plumbing');
@@ -40,6 +43,15 @@ export default function ReportRepair() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The landlord logs a repair against one of their tenancies; a tenant's goes to their own home.
+  useEffect(() => {
+    if (!landlord) return;
+    api
+      .listTenancies()
+      .then((all) => setTenancies(all.filter((t) => t.status === 'active')))
+      .catch(() => setTenancies([]));
+  }, [api, landlord]);
 
   async function addPhoto(source: 'camera' | 'library') {
     const permission = source === 'camera' ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -61,13 +73,17 @@ export default function ReportRepair() {
       setError('Add a short title and describe the problem.');
       return;
     }
+    if (landlord && !tenancyId) {
+      setError('Choose which home this repair is for.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       // Photos go straight from the phone to storage using a short-lived link.
       const photoDocumentIds: string[] = [];
       for (const photo of photos) {
-        const ticket = await api.requestUpload({ fileName: photo.fileName, contentType: photo.mimeType, type: 'maintenance_photo' });
+        const ticket = await api.requestUpload({ fileName: photo.fileName, contentType: photo.mimeType, type: 'maintenance_photo', tenancyId });
         // Demo mode has no file storage and returns no upload link.
         if (ticket.uploadUrl) {
           const file = await (await fetch(photo.uri)).blob();
@@ -76,7 +92,7 @@ export default function ReportRepair() {
         }
         photoDocumentIds.push(ticket.documentId);
       }
-      const created = await api.reportMaintenance({ title: title.trim(), description: description.trim(), category, urgency, photoDocumentIds });
+      const created = await api.reportMaintenance({ tenancyId, title: title.trim(), description: description.trim(), category, urgency, photoDocumentIds });
       router.replace(`/repair/${created.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send the report');
@@ -91,6 +107,17 @@ export default function ReportRepair() {
         <View style={styles.card}>
           <Text style={styles.body}>If you smell gas, leave the property and call the gas emergency line: 0800 111 999 in England, Wales and Scotland, or 0800 002 001 in Northern Ireland. If anyone is in danger, call 999.</Text>
         </View>
+      ) : null}
+
+      {landlord ? (
+        <>
+          <Text style={styles.label}>Which home?</Text>
+          <View style={styles.row}>
+            {tenancies.map((t) => (
+              <Chip key={t.id} label={t.propertyAddress.split(',')[0] ?? t.propertyAddress} selected={tenancyId === t.id} onPress={() => setTenancyId(t.id)} />
+            ))}
+          </View>
+        </>
       ) : null}
 
       <Text style={styles.label}>What is the problem?</Text>

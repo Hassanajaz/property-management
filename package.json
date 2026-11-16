@@ -10,9 +10,10 @@
   "scripts": {
     "test": "npm test --workspace @lettly/core",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "dev:web": "npm run dev --workspace @lettly/web",
+    "dev:web": "npm run web --workspace @lettly/mobile",
     "dev:mobile": "npm run start --workspace @lettly/mobile",
-    "deploy": "npm run deploy --workspace @lettly/infra --"
+    "deploy": "npm run deploy --workspace @lettly/infra --",
+    "build:web": "npm run build:web --workspace @lettly/mobile"
   },
   "engines": {
     "node": ">=22.6"

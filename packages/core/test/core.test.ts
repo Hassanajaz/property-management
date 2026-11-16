@@ -418,3 +418,50 @@ test('demo: applicant decisions, payments, keys, contractors and inspections', a
   assert.equal((await landlord.listExpenses()).length, before + 1);
   await assert.rejects(() => landlord.addMileage({ date: today(), miles: 0, purpose: 'x' }));
 });
+
+test('inventories, right to rent and new tenancies', async () => {
+  const { createDemoApi, resetDemo, inventoryChanges, inventoryReport, rightToRentState } = await import('../src/index.ts');
+  resetDemo();
+  const landlord = createDemoApi('landlord');
+  const tenant = createDemoApi('tenant');
+
+  // Inventory: the tenant can read their own, only the landlord can change it.
+  const inventory = await tenant.getInventory('demo-tenancy-1');
+  assert.equal(inventory.items.length, 5);
+  await assert.rejects(() => tenant.getInventory('demo-tenancy-2'));
+  await assert.rejects(() => tenant.addInventoryItem('demo-tenancy-1', { room: 'Hall', item: 'Mirror', condition: 'good' }));
+  await landlord.addInventoryItem('demo-tenancy-1', { room: 'Hall', item: 'Mirror', condition: 'good' });
+  await landlord.recordCheckOut('demo-tenancy-1', 'demo-inv-3', { condition: 'poor', note: 'Large stain by the window' });
+  const after = await landlord.recordCheckOut('demo-tenancy-1', 'demo-inv-5', { condition: 'fair' });
+  assert.equal(after.items.length, 6);
+  const worse = inventoryChanges(after.items);
+  assert.deepEqual(worse.map((i) => i.id), ['demo-inv-3']);
+  const report = inventoryReport(after);
+  assert.ok(report.includes('ITEMS IN WORSE CONDITION AT CHECK-OUT: 1'));
+  assert.ok(report.includes('Living room: Carpet. New to Poor (Large stain by the window)'));
+
+  // Right to Rent follow-ups.
+  assert.equal(rightToRentState({ expiresOn: null }, '2026-11-16'), 'valid');
+  assert.equal(rightToRentState({ expiresOn: '2027-06-01' }, '2026-11-16'), 'valid');
+  assert.equal(rightToRentState({ expiresOn: '2026-12-01' }, '2026-11-16'), 'follow_up_due');
+  assert.equal(rightToRentState({ expiresOn: '2026-11-01' }, '2026-11-16'), 'expired');
+  const checks = await landlord.listRightToRent();
+  assert.equal(checks.filter((c) => rightToRentState(c, today()) === 'follow_up_due').length, 1);
+  await landlord.recordRightToRent({ tenancyId: 'demo-tenancy-1', tenantName: 'Priya Shah', method: 'share_code', checkedOn: today(), expiresOn: addMonths(today(), 24) });
+  const updated = await landlord.listRightToRent();
+  assert.equal(updated.length, 2);
+  assert.ok(updated.every((c) => rightToRentState(c, today()) === 'valid'));
+  await assert.rejects(() => tenant.listRightToRent());
+
+  // New tenancy on the vacant property, with its legal steps generated.
+  await assert.rejects(() => landlord.createTenancy({ propertyId: 'demo-property-1', startDate: today(), rentAmountPence: 100000, rentFrequency: 'monthly', depositPence: 0, tenants: [{ name: 'A B', email: 'a@example.com' }] }));
+  const before = (await landlord.listCompliance()).items.length;
+  const created = await landlord.createTenancy({ propertyId: 'demo-property-4', startDate: today(), rentAmountPence: 130000, rentFrequency: 'monthly', depositPence: 150000, tenants: [{ name: 'Daniel Okafor', email: 'd@example.com' }] });
+  assert.equal(created.propertyId, 'demo-property-4');
+  assert.equal(created.balancePence, 130000);
+  const items = (await landlord.listCompliance()).items;
+  assert.ok(items.length > before);
+  assert.ok(items.some((i) => i.tenancyId === created.id && i.ruleId === 'deposit_protect.ew' && i.dueDate !== null));
+  const withScheme = await landlord.updateTenancy(created.id, { depositScheme: 'mydeposits' });
+  assert.equal(withScheme.depositScheme, 'mydeposits');
+});

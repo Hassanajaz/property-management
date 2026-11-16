@@ -5,6 +5,7 @@
 #                                 plugged into this Mac. The app then works on its own.
 #   ./run-on-iphone.sh expo-go    No Xcode: run the app inside the Expo Go app by
 #                                 scanning a QR code (phone and Mac on the same Wi-Fi).
+#   ./run-on-iphone.sh web        Open the same app in your web browser on this Mac.
 #
 # Optional: EXPO_SDK=58 ./run-on-iphone.sh ...   to force an Expo SDK version.
 set -euo pipefail
@@ -49,6 +50,11 @@ if [ "$SDK" != "54" ]; then
   npx expo install "expo@^${SDK}.0.0" --fix
 else
   npx expo install --fix || echo "Version check reported problems; carrying on."
+fi
+
+if [ "$MODE" = "web" ]; then
+  say "3/3 Starting. The app opens in your browser; leave this window running."
+  exec npx expo start --web
 fi
 
 if [ "$MODE" = "expo-go" ]; then

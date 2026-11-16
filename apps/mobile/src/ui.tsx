@@ -15,7 +15,8 @@ export const colors = {
 
 export const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.page },
-  content: { padding: 16, gap: 12 },
+  // Centred with a maximum width so the browser version stays readable on a wide screen.
+  content: { padding: 16, gap: 12, width: '100%', maxWidth: 880, alignSelf: 'center' },
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 6 },
   h1: { fontSize: 24, fontWeight: '700', color: colors.ink },
   h2: { fontSize: 17, fontWeight: '600', color: colors.ink },

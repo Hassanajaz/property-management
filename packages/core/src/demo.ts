@@ -7,12 +7,15 @@ import {
   type DocumentDto,
   type ExpenseDto,
   type InspectionDto,
+  type InventoryDto,
+  type InventoryItemDto,
   type KeyDto,
   type LedgerPaymentDto,
   type MaintenanceRequestDto,
   type MaintenanceUpdateDto,
   type MileageDto,
   type PropertyDto,
+  type RightToRentDto,
   type TenancyDto,
 } from './client.ts';
 import { complianceScore, generateRequirements, nextDue, statusOf, type RequirementState } from './compliance/engine.ts';
@@ -55,6 +58,8 @@ interface DemoStore {
   inspections: InspectionDto[];
   expenses: ExpenseDto[];
   mileage: MileageDto[];
+  inventories: Record<string, InventoryItemDto[]>;
+  rightToRent: RightToRentDto[];
   items: DemoItem[];
   repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[] })[];
   nextId: number;
@@ -325,7 +330,26 @@ function seed(): DemoStore {
     { id: 'demo-mileage-3', date: addDays(now, -9), miles: 46, purpose: 'Viewings at 5 Orchard Close' },
   ];
 
-  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, items, repairs, nextId: 100 };
+  const inventories: Record<string, InventoryItemDto[]> = {
+    [TENANT_TENANCY_ID]: [
+      { id: 'demo-inv-1', room: 'Kitchen', item: 'Oven and hob', checkIn: 'good', checkInNote: 'Clean, all rings working', checkOut: null, checkOutNote: null },
+      { id: 'demo-inv-2', room: 'Kitchen', item: 'Worktops', checkIn: 'good', checkInNote: 'Small chip by the sink', checkOut: null, checkOutNote: null },
+      { id: 'demo-inv-3', room: 'Living room', item: 'Carpet', checkIn: 'new', checkInNote: 'Fitted before move-in', checkOut: null, checkOutNote: null },
+      { id: 'demo-inv-4', room: 'Living room', item: 'Walls and paintwork', checkIn: 'good', checkInNote: null, checkOut: null, checkOutNote: null },
+      { id: 'demo-inv-5', room: 'Bedroom 1', item: 'Wardrobe', checkIn: 'fair', checkInNote: 'Door hinge loose', checkOut: null, checkOutNote: null },
+    ],
+    'demo-tenancy-2': [
+      { id: 'demo-inv-6', room: 'Kitchen', item: 'Fridge freezer', checkIn: 'good', checkInNote: null, checkOut: null, checkOutNote: null },
+      { id: 'demo-inv-7', room: 'Bathroom', item: 'Bath and sealant', checkIn: 'good', checkInNote: null, checkOut: null, checkOutNote: null },
+    ],
+  };
+
+  const rightToRent: RightToRentDto[] = [
+    { id: 'demo-rtr-1', tenancyId: TENANT_TENANCY_ID, tenantName: 'Priya Shah', propertyAddress: address(first), method: 'share_code', checkedOn: addDays(tenancyStart, -5), expiresOn: addDays(now, 20) },
+    { id: 'demo-rtr-2', tenancyId: TENANT_TENANCY_ID, tenantName: 'Tom Reed', propertyAddress: address(first), method: 'documents', checkedOn: addDays(tenancyStart, -5), expiresOn: null },
+  ];
+
+  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, inventories, rightToRent, items, repairs, nextId: 100 };
 }
 
 function demoStore(): DemoStore {
@@ -387,6 +411,20 @@ export function createDemoApi(role: Role): ApiClient {
       { startDate: tenancy.startDate, endDate: tenancy.endDate ?? undefined, amountPence: tenancy.rentAmountPence, frequency: tenancy.rentFrequency },
       onDate,
     );
+
+  const tenancyDto = ({ payments, ...tenancy }: DemoTenancy): TenancyDto => {
+    const onDate = today();
+    const summary = arrears(ledgerCharges(tenancy, onDate), payments, onDate);
+    const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
+    return { ...tenancy, propertyAddress: address(property), balancePence: summary.balancePence, daysInArrears: summary.daysInArrears };
+  };
+
+  const inventoryDto = (tenancyId: string): InventoryDto => {
+    const tenancy = s.tenancies.find((t) => t.id === tenancyId);
+    const property = s.properties.find((p) => p.id === tenancy?.propertyId);
+    if (!tenancy || !property || !canSee(property.id)) throw new ApiError(404, 'Tenancy not found');
+    return { tenancyId, propertyAddress: address(property), tenantNames: tenancy.tenantNames, items: [...(s.inventories[tenancyId] ?? [])] };
+  };
 
   const onlyLandlord = (): void => {
     if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
@@ -577,6 +615,71 @@ export function createDemoApi(role: Role): ApiClient {
     listPayments: async () => {
       onlyLandlord();
       return s.tenancies.flatMap((t) => t.payments.filter((p) => p.status === 'confirmed').map((p) => ({ id: p.id, tenancyId: t.id, date: p.date, amountPence: p.amountPence })));
+    },
+
+    createTenancy: async (input) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === input.propertyId);
+      if (!property) throw new ApiError(404, 'Property not found');
+      if (s.tenancies.some((t) => t.propertyId === property.id && t.status === 'active')) throw new ApiError(409, 'This property already has a current tenancy');
+      if (input.tenants.length === 0 || input.tenants.some((t) => !t.name.trim())) throw new ApiError(400, 'Add at least one tenant with a name');
+      if (!Number.isInteger(input.rentAmountPence) || input.rentAmountPence <= 0) throw new ApiError(400, 'Enter the rent');
+      const tenancy: DemoTenancy = {
+        id: `demo-tenancy-${(s.nextId += 1)}`, propertyId: property.id, tenantNames: input.tenants.map((t) => t.name.trim()),
+        startDate: input.startDate, endDate: null, rentAmountPence: input.rentAmountPence, rentFrequency: input.rentFrequency,
+        depositPence: input.depositPence, depositScheme: null, status: 'active', payments: [],
+      };
+      s.tenancies.push(tenancy);
+      // The tenancy's own legal steps (deposit, documents to serve) are added from the rules.
+      for (const requirement of generateRequirements(
+        { nation: property.nation, scope: 'tenancy', facts: { depositTaken: input.depositPence > 0 }, tenancyStart: input.startDate, depositReceived: input.startDate },
+        input.startDate,
+      )) {
+        s.items.push({ id: `demo-item-${(s.nextId += 1)}`, ruleId: requirement.ruleId, propertyId: property.id, tenancyId: tenancy.id, completedOn: null, expiresOn: null, dueDate: requirement.dueDate ?? null });
+      }
+      return tenancyDto(tenancy);
+    },
+
+    updateTenancy: async (id, input) => {
+      onlyLandlord();
+      const tenancy = s.tenancies.find((t) => t.id === id);
+      if (!tenancy) throw new ApiError(404, 'Tenancy not found');
+      if (input.depositScheme !== undefined) tenancy.depositScheme = input.depositScheme;
+      return tenancyDto(tenancy);
+    },
+
+    getInventory: async (tenancyId) => inventoryDto(tenancyId),
+    addInventoryItem: async (tenancyId, input) => {
+      onlyLandlord();
+      if (!input.room.trim() || !input.item.trim()) throw new ApiError(400, 'Enter the room and the item');
+      inventoryDto(tenancyId); // checks the tenancy exists
+      (s.inventories[tenancyId] ??= []).push({
+        id: `demo-inv-${(s.nextId += 1)}`, room: input.room.trim(), item: input.item.trim(),
+        checkIn: input.condition, checkInNote: input.note?.trim() || null, checkOut: null, checkOutNote: null,
+      });
+      return inventoryDto(tenancyId);
+    },
+    recordCheckOut: async (tenancyId, itemId, input) => {
+      onlyLandlord();
+      const item = (s.inventories[tenancyId] ?? []).find((i) => i.id === itemId);
+      if (!item) throw new ApiError(404, 'Inventory item not found');
+      item.checkOut = input.condition;
+      item.checkOutNote = input.note?.trim() || null;
+      return inventoryDto(tenancyId);
+    },
+
+    listRightToRent: async () => (onlyLandlord(), [...s.rightToRent]),
+    recordRightToRent: async (input) => {
+      onlyLandlord();
+      const tenancy = s.tenancies.find((t) => t.id === input.tenancyId);
+      const property = s.properties.find((p) => p.id === tenancy?.propertyId);
+      if (!tenancy || !property) throw new ApiError(404, 'Tenancy not found');
+      if (!input.tenantName.trim()) throw new ApiError(400, 'Enter the tenant\'s name');
+      // A new check for the same person replaces the old one.
+      s.rightToRent = s.rightToRent.filter((c) => !(c.tenancyId === input.tenancyId && c.tenantName === input.tenantName.trim()));
+      const check: RightToRentDto = { ...input, tenantName: input.tenantName.trim(), id: `demo-rtr-${(s.nextId += 1)}`, propertyAddress: address(property) };
+      s.rightToRent.push(check);
+      return check;
     },
 
     listContractors: async () => (onlyLandlord(), [...s.contractors]),

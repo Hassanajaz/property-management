@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import {
   APPLICATION_STATUS_LABEL,
   CHECK_LABEL,
@@ -26,6 +26,7 @@ import {
   type TenancyDto,
 } from '@lettly/core';
 import { percent, useAction } from './hooks';
+import { shareText } from './platform';
 import { useSession } from './session';
 import { Button, Chip, StatusBadge, colors, styles } from './ui';
 
@@ -394,6 +395,8 @@ const TOOLS: { href: string; title: string; hint: string }[] = [
   { href: '/tools/inspections', title: 'Inspections', hint: 'Plan visits and record notice given' },
   { href: '/tools/contractors', title: 'Contractors', hint: 'Trades you use, their registrations and insurance' },
   { href: '/tools/keys', title: 'Key register', hint: 'Where every key is, with each handover logged' },
+  { href: '/tools/deposits', title: 'Deposit register', hint: 'Each deposit, its scheme and whether it is protected' },
+  { href: '/tools/right-to-rent', title: 'Right to Rent', hint: 'Checks recorded and follow-ups due (England)' },
 ];
 type Section = (typeof SECTIONS)[number];
 
@@ -412,6 +415,7 @@ export function Portfolio() {
   const { identity, signOut, demo } = useSession();
   const { data, loading, error, load } = usePortfolioData();
   const [section, setSection] = useState<Section>('Overview');
+  const [note, setNote] = useState<string | null>(null);
 
   const summary = useMemo(() => (data ? portfolioSummary(data) : null), [data]);
   const letTo = useMemo(() => new Map((data?.tenancies ?? []).filter((t) => t.status === 'active').map((t) => [t.propertyId, t])), [data]);
@@ -478,8 +482,9 @@ export function Portfolio() {
             <Button
               title="Share the properties table (CSV)"
               kind="secondary"
-              onPress={() => void Share.share({ title: 'Properties', message: propertiesCsv(data.properties, data.tenancies, data.compliance) })}
+              onPress={async () => setNote(await shareText('Properties', propertiesCsv(data.properties, data.tenancies, data.compliance)))}
             />
+            {note ? <Text style={styles.muted}>{note}</Text> : null}
           </>
         ) : null}
 
@@ -528,6 +533,7 @@ export function Portfolio() {
 
         {data && section === 'Repairs' ? (
           <>
+            <Button title="Log a repair" kind="secondary" onPress={() => router.push('/report')} />
             {data.repairs.map((r) => <RepairCard key={r.id} repair={r} />)}
             {data.repairs.length === 0 ? <Text style={styles.muted}>No repairs reported.</Text> : null}
           </>

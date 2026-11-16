@@ -1,11 +1,11 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { formatPence, propertyMoney, yearlyRentPence, type PropertyDto, type TenancyDto } from '@lettly/core';
+import { formatPence, propertyMoney, today, yearlyRentPence, type PropertyDto, type RentFrequency, type TenancyDto } from '@lettly/core';
 import { percent, poundsToPence, useAction } from '../../src/hooks';
 import { useSession } from '../../src/session';
 import { AddDocument, ApplicationCard, ComplianceCard, DocumentRow, RepairCard, TenancyCard, usePortfolioData } from '../../src/portfolio';
-import { Button, StatusBadge, colors, styles } from '../../src/ui';
+import { Button, Chip, StatusBadge, colors, styles } from '../../src/ui';
 
 /** Everything about one property: who lives there, rent, compliance, repairs, documents and applicants. */
 export default function Property() {
@@ -48,6 +48,7 @@ export default function Property() {
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Tenancy and rent</Text>
           {tenancies.length === 0 ? <Text style={styles.muted}>No tenancy at the moment.</Text> : null}
+          {!current ? <AddTenancy propertyId={property.id} onAdded={load} /> : null}
           {tenancies.map((t) => (
             <View key={t.id} style={{ gap: 6 }}>
               <TenancyCard tenancy={t} showAddress={false} />
@@ -129,6 +130,67 @@ function MoneyCard({ property, tenancy, onSaved }: { property: PropertyDto; tena
       ) : (
         <Button title="Update value or mortgage" kind="secondary" onPress={() => setEditing(true)} />
       )}
+    </View>
+  );
+}
+
+const FREQUENCIES: { value: RentFrequency; label: string }[] = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'fortnightly', label: 'Fortnightly' },
+  { value: 'four_weekly', label: 'Four-weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
+
+/** Starts a tenancy on a vacant property. The legal steps for that tenancy are added automatically. */
+function AddTenancy({ propertyId, onAdded }: { propertyId: string; onAdded: () => void }) {
+  const { api } = useSession();
+  const save = useAction();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [rent, setRent] = useState('');
+  const [deposit, setDeposit] = useState('');
+  const [frequency, setFrequency] = useState<RentFrequency>('monthly');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function submit() {
+    const rentAmountPence = poundsToPence(rent);
+    const depositPence = deposit.trim() ? poundsToPence(deposit) : 0;
+    if (!name.trim() || !/^\S+@\S+\.\S+$/.test(email.trim()) || !rentAmountPence || depositPence === null) {
+      setFormError("Enter the tenant's name and email, and the rent in pounds.");
+      return;
+    }
+    setFormError(null);
+    const ok = await save.run(() =>
+      api.createTenancy({ propertyId, startDate: today(), rentAmountPence, rentFrequency: frequency, depositPence, tenants: [{ name: name.trim(), email: email.trim() }] }),
+    );
+    if (ok) {
+      setOpen(false);
+      onAdded();
+    }
+  }
+
+  if (!open) return <Button title="Start a tenancy" kind="secondary" onPress={() => setOpen(true)} />;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.h2}>Start a tenancy from today</Text>
+      <Text style={styles.label}>Tenant's name</Text>
+      <TextInput style={styles.input} value={name} onChangeText={setName} />
+      <Text style={styles.label}>Tenant's email (for their login invitation)</Text>
+      <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+      <Text style={styles.label}>Rent in pounds</Text>
+      <TextInput style={styles.input} value={rent} onChangeText={setRent} keyboardType="decimal-pad" />
+      <View style={styles.row}>
+        {FREQUENCIES.map((f) => (
+          <Chip key={f.value} label={f.label} selected={frequency === f.value} onPress={() => setFrequency(f.value)} />
+        ))}
+      </View>
+      <Text style={styles.label}>Deposit in pounds (leave empty for none)</Text>
+      <TextInput style={styles.input} value={deposit} onChangeText={setDeposit} keyboardType="decimal-pad" />
+      {formError ?? save.error ? <Text style={styles.error}>{formError ?? save.error}</Text> : null}
+      <Button title="Start tenancy" onPress={submit} busy={save.busy} />
+      <Button title="Cancel" kind="secondary" onPress={() => setOpen(false)} />
     </View>
   );
 }

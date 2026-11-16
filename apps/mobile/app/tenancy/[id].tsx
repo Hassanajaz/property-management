@@ -1,8 +1,9 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { arrearsMessage, formatPence, isLandlord, paymentRate, receiptText, rentReview, today } from '@lettly/core';
 import { poundsToPence, useAction, useLoad } from '../../src/hooks';
+import { shareText } from '../../src/platform';
 import { useSession } from '../../src/session';
 import { Button, Chip, colors, styles } from '../../src/ui';
 
@@ -36,6 +37,7 @@ export default function RentStatement() {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<(typeof METHODS)[number]['value']>('bank_transfer');
   const [formError, setFormError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const ledger = data?.ledger;
   const tenancy = data?.tenancy;
@@ -99,7 +101,7 @@ export default function RentStatement() {
               <Text style={styles.muted}>Opens a reminder message you can read, edit and send by email or text. Nothing is sent automatically.</Text>
               <Button
                 title="Preview reminder message"
-                onPress={() => void Share.share({ message: arrearsMessage({ tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, summary: ledger.summary, landlordName }) })}
+                onPress={async () => setNote(await shareText('Rent reminder', arrearsMessage({ tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, summary: ledger.summary, landlordName })))}
               />
             </View>
           ) : null}
@@ -129,6 +131,9 @@ export default function RentStatement() {
             </View>
           ) : null}
 
+          <Button title="Inventory and check-out" kind="secondary" onPress={() => router.push(`/inventory/${id}`)} />
+          {note ? <Text style={styles.muted}>{note}</Text> : null}
+
           <Text style={[styles.h2, { marginTop: 8 }]}>Statement</Text>
           {landlord ? <Text style={styles.muted}>Tap a payment to share a receipt.</Text> : null}
           <View style={styles.card}>
@@ -151,10 +156,13 @@ export default function RentStatement() {
                   key={line.key}
                   accessibilityRole="button"
                   accessibilityLabel={`Share receipt for payment on ${line.date}`}
-                  onPress={() =>
-                    void Share.share({
-                      message: receiptText({ landlordName, tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, date: line.date, amountPence: line.amountPence, method: line.method ?? 'other' }),
-                    })
+                  onPress={async () =>
+                    setNote(
+                      await shareText(
+                        'Rent receipt',
+                        receiptText({ landlordName, tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, date: line.date, amountPence: line.amountPence, method: line.method ?? 'other' }),
+                      ),
+                    )
                   }
                 >
                   {row}

@@ -1,4 +1,3 @@
-import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   createApiClient,
@@ -11,6 +10,7 @@ import {
   type Role,
   type Session,
 } from '@lettly/core';
+import { sessionStore } from './platform';
 
 /** Set in apps/mobile/.env from the `cdk deploy` outputs. */
 export const authConfig: AuthConfig = {
@@ -47,13 +47,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     sessionRef.current = session;
     setIdentity(session ? identityFrom(session) : null);
     if (DEMO_MODE) return;
-    if (session) await SecureStore.setItemAsync(STORE_KEY, JSON.stringify(session));
-    else await SecureStore.deleteItemAsync(STORE_KEY);
+    if (session) await sessionStore.set(STORE_KEY, JSON.stringify(session));
+    else await sessionStore.remove(STORE_KEY);
   }, []);
 
   useEffect(() => {
     if (DEMO_MODE) return;
-    SecureStore.getItemAsync(STORE_KEY)
+    sessionStore
+      .get(STORE_KEY)
       .then((raw) => store(raw ? (JSON.parse(raw) as Session) : null))
       .catch(() => store(null));
   }, [store]);

@@ -3,7 +3,10 @@
 UK lettings platform for landlords: compliance, rent, referencing, documents and
 maintenance. There are two kinds of login only: a landlord, who owns the account
 and manages everything in it, and the tenants they invite. There is no agency
-or staff role. Web and mobile.
+or staff role.
+
+It is one app: the same screens run on iPhone, in a web browser and (later) on
+Android, so every feature reaches all three at once.
 
 The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
@@ -11,10 +14,9 @@ The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
 | Folder | What it is | State |
 | --- | --- | --- |
-| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (26 tests) and type-checked |
+| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (27 tests) and type-checked |
 | `apps/api` | API (Hono on AWS Lambda), database schema (Drizzle, PostgreSQL), row-level security, invites, maintenance, documents, rent ledger, GoCardless webhook | Written, **not yet run** |
-| `apps/web` | Web app (React, Vite): sign-in, compliance table, repairs, add property | Written, **not yet run** |
-| `apps/mobile` | iOS and Android app (Expo): sign-in, home, report a repair with photos, repair timeline | Written, **not yet run** |
+| `apps/mobile` | The app for iPhone, web and Android (Expo): landlord dashboard and tools, tenant home, demo mode | Runs on iPhone; **web not yet run** |
 | `infra` | AWS CDK stack for London (`eu-west-2`) with a budget alarm | Written, **not yet deployed** |
 
 Only `packages/core` could be executed where this was written, because package
@@ -30,6 +32,7 @@ you can try it before anything is deployed to AWS. From this folder on your Mac:
 ```bash
 ./run-on-iphone.sh            # builds with Xcode and installs on the plugged-in iPhone
 ./run-on-iphone.sh expo-go    # no Xcode: scan a QR code and run inside Expo Go
+./run-on-iphone.sh web        # opens the same app in your browser on this Mac
 ```
 
 **Install with Xcode (default).** Needs Xcode from the Mac App Store, the
@@ -55,8 +58,11 @@ applicants and tools. From it the landlord can:
 - run a repair, assign a contractor and record the quote and final cost;
 - mark compliance items done, and see the 60, 30 and 7 day reminder ladder;
 - decide an applicant's referencing and make them the tenant;
+- start a tenancy on a vacant property, and log a repair themselves;
+- keep an inventory with check-in and check-out conditions and share the report;
 - use the tools: finance and tax-year figures with mileage, rent reviews,
-  inspections with the 24-hour notice check, contractors and the key register. Data is shared between
+  inspections with the 24-hour notice check, contractors, the key register,
+  the deposit register and Right to Rent checks with follow-up dates. Data is shared between
 the two while the app stays open: report a repair as the tenant, tap
 "Switch person", and handle it as the landlord.
 
@@ -70,7 +76,7 @@ sign-up credits still apply).
 
 ```bash
 npm install
-npm test                # shared rules: should print 26 passing tests
+npm test                # shared rules: should print 27 passing tests
 npm run typecheck       # fix anything reported before going further
 
 ```
@@ -99,11 +105,9 @@ retry it.
 ### Run the apps
 
 ```bash
-cp .env.example apps/web/.env.local   # keep the VITE_ lines, fill them in
-npm run dev:web
-
-cp .env.example apps/mobile/.env      # keep the EXPO_PUBLIC_ lines
-npm run dev:mobile                    # scan the QR code with Expo Go on your iPhone
+cp .env.example apps/mobile/.env      # keep the EXPO_PUBLIC_ lines, fill them in
+npm run dev:web                       # the app in your browser
+npm run dev:mobile                    # or scan the QR code with Expo Go
 ```
 
 ## How the logins work
@@ -123,7 +127,8 @@ npm run dev:mobile                    # scan the QR code with Expo Go on your iP
 
 The landlord tools added most recently (contractors and work orders, keys,
 inspections, expenses, mileage, applicant decisions, property value and
-mortgage, the all-payments list) work in demo mode. Their API methods are
+mortgage, the all-payments list, inventories, Right to Rent records, deposit
+scheme) work in demo mode. Their API methods are
 defined in `packages/core/src/client.ts`, but the matching backend routes and
 database tables are **not written yet**, so they will fail against a deployed
 backend until those are added.
@@ -137,8 +142,7 @@ backend until those are added.
 - Section 8 and Section 13 notice drafts, deposit prescribed information,
   tenancy agreements: legal documents that need solicitor-approved templates
   for each nation.
-- Adverts and viewings, inventories with check-in and check-out reports, the
-  deposit dispute pack, possession tracker, Right to Rent wizard, bulk upload,
+- Adverts and viewings, possession tracker, bulk upload,
   spreadsheet import, reading dates off certificates, accountant read-only
   access, AI advisor: not started.
 
