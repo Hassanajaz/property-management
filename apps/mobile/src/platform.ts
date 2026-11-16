@@ -1,5 +1,8 @@
+import * as Print from 'expo-print';
 import * as SecureStore from 'expo-secure-store';
+import * as Sharing from 'expo-sharing';
 import { Platform, Share } from 'react-native';
+import { textToHtml } from '@lettly/core';
 
 /**
  * Small differences between the phone app and the browser version live here,
@@ -32,6 +35,37 @@ export async function shareText(title: string, text: string): Promise<string | n
     return null;
   }
   return 'Sharing is not available in this browser.';
+}
+
+/**
+ * Makes a PDF of a report or document and hands it over. On the phone it opens
+ * the share sheet with the PDF file (save to Files, email, AirDrop, print).
+ * In a browser it opens the print dialog, where "Save as PDF" makes the file.
+ * Returns a short note to show the user, or null.
+ */
+export async function sharePdf(title: string, text: string): Promise<string | null> {
+  const html = textToHtml(title, text);
+  try {
+    if (!isWeb) {
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: title });
+        return null;
+      }
+      await Print.printAsync({ uri });
+      return null;
+    }
+    const browser = globalThis as { open?: (url: string, target: string) => { document: { write: (h: string) => void; close: () => void }; focus: () => void; print: () => void } | null };
+    const page = browser.open?.('', '_blank');
+    if (!page) return 'Your browser blocked the new window. Allow pop-ups for this page and try again.';
+    page.document.write(html);
+    page.document.close();
+    page.focus();
+    page.print();
+    return 'In the print window, choose "Save as PDF" to keep a copy.';
+  } catch {
+    return 'The PDF could not be made. Try again, or share it as text instead.';
+  }
 }
 
 /**

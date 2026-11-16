@@ -69,7 +69,7 @@ File storage is not a separate product: every file is attached to the thing it e
 | Lettings | Adverts, applications, viewings, references, convert applicant to tenant | Phase 3 (applications and referencing); adverts later |
 | Deposits and Right to Rent | Deposit register, prescribed information generator, share-code audit trail | Phase 1 register; generator in phase 3 |
 | Agency tools | Landlord statements, commission tracking, client account reconciliation, roles, branches | Not planned: there is no agency role |
-| Notices and possession | Section 8 and 13 drafts, rent review board, possession tracker | Later; needs solicitor-reviewed templates per nation |
+| Notices and possession | Section 8 and 13 drafts, rent review board, possession tracker | Built: rent reviews, notices log, possession tracker, and ready-made documents shared as PDF (not solicitor-checked; statutory notices still go on the official forms) |
 | Inventories, inspections, keys | Check-in and check-out reports, inspection planning, key register | Later |
 | Tax and accounting | Making Tax Digital updates, Xero, profitability | Later; integration-heavy |
 

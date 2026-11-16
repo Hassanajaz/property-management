@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { advertText, formatPence, today, type PropertyDto, type ViewingOutcome } from '@lettly/core';
 import { poundsToPence, useAction, useLoad } from '../../src/hooks';
-import { shareText } from '../../src/platform';
+import { ShareButtons } from '../../src/share';
 import { useSession } from '../../src/session';
 import { Button, Chip, StatusBadge, styles } from '../../src/ui';
 
@@ -123,7 +123,7 @@ function AdvertCard({ property, onSaved }: { property: PropertyDto; onSaved: () 
           <Text style={styles.muted}>
             {formatPence(advert.rentPence)} a month · available {advert.availableFrom}
           </Text>
-          <Button title="Share the advert wording" onPress={async () => setNote(await shareText('Property to let', advertText(property, advert)))} />
+          <ShareButtons title="Property to let" label="Share the advert" text={() => advertText(property, advert)} />
         </>
       ) : null}
       {!advert && !editing ? <Text style={styles.muted}>No advert written yet.</Text> : null}

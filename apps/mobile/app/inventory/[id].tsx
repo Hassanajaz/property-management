@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { CONDITIONS, CONDITION_LABEL, inventoryChanges, inventoryReport, isLandlord, type Condition } from '@lettly/core';
 import { useAction, useLoad } from '../../src/hooks';
-import { shareText } from '../../src/platform';
+import { ShareButtons } from '../../src/share';
 import { useSession } from '../../src/session';
 import { Button, Chip, colors, styles } from '../../src/ui';
 
@@ -36,8 +36,7 @@ export default function Inventory() {
             <Text style={[styles.body, { color: worse.length > 0 ? colors.warn : colors.ink }]}>
               {data.items.length} items · {worse.length} in worse condition at check-out
             </Text>
-            <Button title="Share the full report" kind="secondary" onPress={async () => setNote(await shareText('Inventory report', inventoryReport(data)))} />
-            {note ? <Text style={styles.muted}>{note}</Text> : null}
+            <ShareButtons title="Inventory report" label="Share the full report" text={() => inventoryReport(data)} />
           </View>
 
           {rooms.map((name) => (

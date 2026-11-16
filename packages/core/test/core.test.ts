@@ -556,3 +556,37 @@ test('spreadsheet import, templates, adverts, possession stages and packs', asyn
   const forAccountant = accountantPack(summary, expenses, mileage);
   assert.ok(forAccountant.includes('EXPENSES') && forAccountant.includes('MILEAGE') && forAccountant.includes('Date,Category,Description,Property,Amount'));
 });
+
+test('ready-made documents fill in cleanly, and reports convert to printable pages', async () => {
+  const { BUILT_IN_TEMPLATES, builtInTemplatesFor, TEMPLATE_FIELDS, fillTemplate, templateValues, textToHtml, accountantPack, financeSummary, taxYearOf, createDemoApi, resetDemo } = await import('../src/index.ts');
+  resetDemo();
+  const landlord = createDemoApi('landlord');
+  const tenancy = (await landlord.listTenancies()).find((t) => t.id === 'demo-tenancy-2')!;
+  const values = templateValues(tenancy, 'Sam Landlord', today());
+  assert.deepEqual(Object.keys(values).sort(), [...TEMPLATE_FIELDS].sort());
+
+  assert.ok(BUILT_IN_TEMPLATES.length >= 10);
+  assert.equal(new Set(BUILT_IN_TEMPLATES.map((t) => t.id)).size, BUILT_IN_TEMPLATES.length);
+  for (const template of BUILT_IN_TEMPLATES) {
+    const filled = fillTemplate(template.body, values);
+    assert.deepEqual(filled.unknown, [], `${template.name} uses only known placeholders`);
+    assert.ok(!filled.text.includes('{{'), `${template.name} has no unfilled placeholders`);
+    assert.ok(template.description.length > 20);
+  }
+  assert.ok(builtInTemplatesFor('england').some((t) => t.id === 'builtin-tenancy-agreement-england'));
+  assert.ok(!builtInTemplatesFor('scotland').some((t) => t.id === 'builtin-tenancy-agreement-england'));
+  const arrearsLetter = fillTemplate(BUILT_IN_TEMPLATES.find((t) => t.id === 'builtin-arrears-first')!.body, values).text;
+  assert.ok(arrearsLetter.includes('Dear Megan Lloyd') && arrearsLetter.includes('£395.00'));
+
+  // Printable page: headings, lists, tables, and nothing left unescaped.
+  const expenses = await landlord.listExpenses();
+  const mileage = await landlord.listMileage();
+  const pack = accountantPack(financeSummary({ payments: await landlord.listPayments(), expenses, mileage }, taxYearOf(today())), expenses, mileage);
+  const html = textToHtml('Accounts <2026>', pack);
+  assert.ok(html.includes('<title>Accounts &lt;2026&gt;</title>'));
+  assert.ok(html.includes('<h2>EXPENSES</h2>') && html.includes('<th>Category</th>') && html.includes('<td>Repairs and maintenance</td>'));
+  const agreement = textToHtml('Agreement', fillTemplate(BUILT_IN_TEMPLATES[0]!.body, values).text);
+  assert.ok(agreement.includes('<h2>TENANCY AGREEMENT</h2>') && agreement.includes('<li>Pay the rent on time.</li>'));
+  assert.ok(agreement.includes('Landlord: Sam Landlord<br>'));
+  assert.ok(textToHtml('x', 'a <b> & "c"').includes('a &lt;b&gt; &amp; &quot;c&quot;'));
+});

@@ -26,7 +26,7 @@ import {
   type TenancyDto,
 } from '@lettly/core';
 import { percent, useAction } from './hooks';
-import { shareText } from './platform';
+import { ShareButtons } from './share';
 import { useSession } from './session';
 import { Button, Chip, StatusBadge, colors, styles } from './ui';
 
@@ -486,12 +486,7 @@ export function Portfolio() {
         {data && section === 'Properties' ? (
           <>
             <AddProperty onAdded={load} />
-            <Button
-              title="Share the properties table (CSV)"
-              kind="secondary"
-              onPress={async () => setNote(await shareText('Properties', propertiesCsv(data.properties, data.tenancies, data.compliance)))}
-            />
-            {note ? <Text style={styles.muted}>{note}</Text> : null}
+            <ShareButtons title="Properties" label="Share the properties table" text={() => propertiesCsv(data.properties, data.tenancies, data.compliance)} />
           </>
         ) : null}
 

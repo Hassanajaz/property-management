@@ -454,7 +454,7 @@ export function canAdvancePossession(from: PossessionStage, to: PossessionStage)
 
 // ------------------------------------------------------------------ templates
 /** Placeholders a landlord can use in their own document templates. */
-export const TEMPLATE_FIELDS = ['landlord_name', 'tenant_names', 'property_address', 'rent', 'rent_frequency', 'deposit', 'start_date', 'today'] as const;
+export const TEMPLATE_FIELDS = ['landlord_name', 'tenant_names', 'property_address', 'rent', 'rent_frequency', 'deposit', 'deposit_scheme', 'arrears', 'start_date', 'today'] as const;
 export type TemplateField = (typeof TEMPLATE_FIELDS)[number];
 
 export function templateValues(tenancy: TenancyDto, landlordName: string, today: IsoDate): Record<TemplateField, string> {
@@ -465,6 +465,8 @@ export function templateValues(tenancy: TenancyDto, landlordName: string, today:
     rent: formatPence(tenancy.rentAmountPence),
     rent_frequency: tenancy.rentFrequency.replace('_', ' '),
     deposit: formatPence(tenancy.depositPence),
+    deposit_scheme: tenancy.depositScheme ?? '[name of deposit scheme]',
+    arrears: formatPence(Math.max(0, tenancy.balancePence)),
     start_date: tenancy.startDate,
     today,
   };
@@ -517,4 +519,72 @@ export function accountantPack(summary: FinanceSummary, expenses: readonly Expen
     ...mileage.filter((m) => within(m.date)).map((m) => [m.date, m.purpose, m.miles].map(csvCell).join(',')),
   ];
   return lines.join('\n');
+}
+
+// ----------------------------------------------------------------------- PDF
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const isHeading = (line: string) => line.length > 3 && /[A-Z]/.test(line) && line === line.toUpperCase() && !/^[\d\W]+$/.test(line) && !line.includes(',');
+const isCsvHeader = (line: string) => /^[A-Z][A-Za-z ]*(,[A-Z][A-Za-z ]*)+$/.test(line);
+
+/**
+ * Turns a plain-text report or letter into a simple printable page: lines in
+ * capitals become headings, lines starting with "- " become a list, and a
+ * block of comma-separated rows under a row of column names becomes a table.
+ * The PDF versions of every report are made from this.
+ */
+export function textToHtml(title: string, text: string): string {
+  const out: string[] = [];
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!.trimEnd();
+    if (line.trim() === '') {
+      i += 1;
+    } else if (isCsvHeader(line)) {
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i]!.trim() !== '') {
+        rows.push(parseCsvLine(lines[i]!));
+        i += 1;
+      }
+      const [head, ...body] = rows;
+      out.push(
+        `<table><thead><tr>${head!.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${body
+          .map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`)
+          .join('')}</tbody></table>`,
+      );
+    } else if (line.startsWith('- ')) {
+      const items: string[] = [];
+      while (i < lines.length && lines[i]!.startsWith('- ')) {
+        items.push(`<li>${escapeHtml(lines[i]!.slice(2))}</li>`);
+        i += 1;
+      }
+      out.push(`<ul>${items.join('')}</ul>`);
+    } else if (isHeading(line)) {
+      out.push(`<h2>${escapeHtml(line)}</h2>`);
+      i += 1;
+    } else {
+      // Consecutive lines stay together as one block, each on its own line (addresses, label and value pairs).
+      const block: string[] = [];
+      while (i < lines.length && lines[i]!.trim() !== '' && !lines[i]!.startsWith('- ') && !isHeading(lines[i]!.trimEnd()) && !isCsvHeader(lines[i]!.trimEnd())) {
+        block.push(escapeHtml(lines[i]!.trimEnd()));
+        i += 1;
+      }
+      out.push(`<p>${block.join('<br>')}</p>`);
+    }
+  }
+  return `<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+@page { size: A4; margin: 20mm; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.45; color: #16212e; }
+h2 { font-size: 12pt; margin: 18pt 0 6pt; letter-spacing: 0.02em; }
+h2:first-child { font-size: 15pt; margin-top: 0; }
+p { margin: 0 0 9pt; }
+ul { margin: 0 0 9pt; padding-left: 16pt; }
+li { margin-bottom: 3pt; }
+table { border-collapse: collapse; width: 100%; margin: 0 0 12pt; font-size: 9.5pt; }
+th, td { border: 0.5pt solid #b9c2cc; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+th { background: #eef1f4; }
+</style></head><body>${out.join('\n')}</body></html>`;
 }

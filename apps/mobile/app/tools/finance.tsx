@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { EXPENSE_CATEGORY_LABEL, accountantPack, financeSummary, formatPence, taxYearOf, today, type ExpenseCategory } from '@lettly/core';
 import { poundsToPence, useAction, useLoad } from '../../src/hooks';
-import { shareText } from '../../src/platform';
+import { ShareButtons } from '../../src/share';
 import { useSession } from '../../src/session';
 import { Button, Chip, colors, styles } from '../../src/ui';
 
@@ -86,8 +86,7 @@ export default function Finance() {
             <Text style={styles.muted}>Residential mortgage interest is not deducted from profit. It is claimed separately as a basic-rate tax reduction.</Text>
           </View>
 
-          <Button title="Share a pack for your accountant" kind="secondary" onPress={async () => setNote(await shareText(`Rental accounts ${summary.taxYear.label}`, accountantPack(summary, data!.expenses, data!.mileage)))} />
-          {note ? <Text style={styles.muted}>{note}</Text> : null}
+          <ShareButtons title={`Rental accounts ${summary.taxYear.label}`} label="Share the accountant pack" text={() => accountantPack(summary, data!.expenses, data!.mileage)} />
           <Text style={styles.muted}>These figures are a working aid for your tax return, not tax advice. Check them with an accountant.</Text>
         </>
       ) : null}

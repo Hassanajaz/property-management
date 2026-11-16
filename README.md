@@ -91,11 +91,14 @@ applicants and tools. From it the landlord can:
 - start a tenancy on a vacant property, and log a repair themselves;
 - keep an inventory with check-in and check-out conditions and share the report;
 - record a rent change, end a tenancy, and share a compliance summary;
+- share every report (inventory, compliance summary, accountant pack, properties
+  table, receipts, arrears reminders, adverts) as a PDF or as text;
 - use the tools: finance and tax-year figures with mileage and an accountant
   pack, rent reviews, inspections with the 24-hour notice check, contractors,
   the key register, the deposit register, Right to Rent checks with follow-up
-  dates, adverts and viewings, a notices log and possession tracker, their own
-  document templates, importing properties from a spreadsheet, and their
+  dates, adverts and viewings, a notices log and possession tracker, ready-made
+  documents and their own templates (filled in from a tenancy and shared as a
+  PDF), importing properties from a spreadsheet, and their
   account and password. Data is shared between
 the two while the app stays open: report a repair as the tenant, tap
 "Switch person", and handle it as the landlord.
@@ -174,15 +177,17 @@ AWS backend until those are added.
 - Making Tax Digital submissions to HMRC: needs HMRC recognition as a software
   provider. The finance tool gives tax-year figures to copy across instead.
 - Xero, e-signatures, SMS reminders: each needs an account with that provider.
-- Ready-made legal documents (Section 8 and Section 13 notices, deposit
-  prescribed information, tenancy agreements): these need solicitor-approved
-  wording for each nation. The app instead lets the landlord store their own
-  wording as templates and logs what has been served.
+- The official prescribed notice forms themselves (for example Form 4 for a
+  rent increase, Form 3 for possession in England). The law requires the
+  official form, so the app supplies covering letters that go with it. The
+  other ready-made documents (tenancy agreement for England, deposit
+  information, arrears letters, inspection notice, welcome and end of tenancy
+  letters, reference request) are built in. They are plain-English starting
+  points and have not been checked by a solicitor.
 - Reading dates off certificates automatically, and the AI advisor: each needs
   an AI service connected.
 - Read-only access for an accountant: left out because there are only two kinds
   of login. The finance tool shares an accountant pack instead.
-- PDF versions of the packs and reports: they are shared as text for now.
 
 ## Known gaps (next work, in order)
 

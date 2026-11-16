@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { arrearsMessage, formatPence, isLandlord, paymentRate, receiptText, rentReview, today } from '@lettly/core';
 import { poundsToPence, useAction, useLoad } from '../../src/hooks';
-import { shareText } from '../../src/platform';
+import { sharePdf } from '../../src/platform';
+import { ShareButtons } from '../../src/share';
 import { useSession } from '../../src/session';
 import { Button, Chip, colors, styles } from '../../src/ui';
 
@@ -101,11 +102,8 @@ export default function RentStatement() {
           {landlord && tenancy && balance > 0 ? (
             <View style={styles.card}>
               <Text style={styles.h2}>Chase the arrears</Text>
-              <Text style={styles.muted}>Opens a reminder message you can read, edit and send by email or text. Nothing is sent automatically.</Text>
-              <Button
-                title="Preview reminder message"
-                onPress={async () => setNote(await shareText('Rent reminder', arrearsMessage({ tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, summary: ledger.summary, landlordName })))}
-              />
+              <Text style={styles.muted}>Makes a reminder you can send as a letter (PDF) or as a message by email or text. Nothing is sent automatically.</Text>
+              <ShareButtons title="Rent reminder" label="Reminder" text={() => arrearsMessage({ tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, summary: ledger.summary, landlordName })} />
             </View>
           ) : null}
 
@@ -183,7 +181,7 @@ export default function RentStatement() {
           {note ? <Text style={styles.muted}>{note}</Text> : null}
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Statement</Text>
-          {landlord ? <Text style={styles.muted}>Tap a payment to share a receipt.</Text> : null}
+          {landlord ? <Text style={styles.muted}>Tap a payment to share a PDF receipt.</Text> : null}
           <View style={styles.card}>
             {lines.map((line) => {
               const row = (
@@ -206,7 +204,7 @@ export default function RentStatement() {
                   accessibilityLabel={`Share receipt for payment on ${line.date}`}
                   onPress={async () =>
                     setNote(
-                      await shareText(
+                      await sharePdf(
                         'Rent receipt',
                         receiptText({ landlordName, tenantNames: tenancy.tenantNames, propertyAddress: tenancy.propertyAddress, date: line.date, amountPence: line.amountPence, method: line.method ?? 'other' }),
                       ),
