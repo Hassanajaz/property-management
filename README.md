@@ -11,7 +11,7 @@ The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 
 | Folder | What it is | State |
 | --- | --- | --- |
-| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (22 tests) and type-checked |
+| `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (26 tests) and type-checked |
 | `apps/api` | API (Hono on AWS Lambda), database schema (Drizzle, PostgreSQL), row-level security, invites, maintenance, documents, rent ledger, GoCardless webhook | Written, **not yet run** |
 | `apps/web` | Web app (React, Vite): sign-in, compliance table, repairs, add property | Written, **not yet run** |
 | `apps/mobile` | iOS and Android app (Expo): sign-in, home, report a repair with photos, repair timeline | Written, **not yet run** |
@@ -44,10 +44,19 @@ the same Wi-Fi. The project targets Expo SDK 54, the version the App Store
 Expo Go supported when this was written. If Expo Go reports that the project
 is incompatible, run `EXPO_SDK=58 ./run-on-iphone.sh expo-go`.
 
-In the app, choose Landlord or Tenant. The landlord home is a
-portfolio dashboard with sections for properties, rent, compliance, repairs,
-documents and applicants; tap a property for everything about it, or a tenancy
-for its rent statement. Data is shared between
+In the app, choose Landlord or Tenant. The landlord home is a portfolio
+dashboard with sections for properties, rent, compliance, repairs, documents,
+applicants and tools. From it the landlord can:
+
+- add a property, record its value and mortgage (equity, loan to value, yield),
+  and share the properties table as CSV;
+- open a rent statement, record a payment, share a receipt, preview an arrears
+  reminder, and see a paid-on-time score and the next rent review date;
+- run a repair, assign a contractor and record the quote and final cost;
+- mark compliance items done, and see the 60, 30 and 7 day reminder ladder;
+- decide an applicant's referencing and make them the tenant;
+- use the tools: finance and tax-year figures with mileage, rent reviews,
+  inspections with the 24-hour notice check, contractors and the key register. Data is shared between
 the two while the app stays open: report a repair as the tenant, tap
 "Switch person", and handle it as the landlord.
 
@@ -61,7 +70,7 @@ sign-up credits still apply).
 
 ```bash
 npm install
-npm test                # shared rules: should print 22 passing tests
+npm test                # shared rules: should print 26 passing tests
 npm run typecheck       # fix anything reported before going further
 
 ```
@@ -109,6 +118,29 @@ npm run dev:mobile                    # scan the QR code with Expo Go on your iP
 - A tenant reports a repair with photos; the landlord reviews, books and
   completes it; each update emails the tenant (and sends a push notification
   once the app registers push tokens); the tenant confirms the fix or reopens it.
+
+## Demo only for now
+
+The landlord tools added most recently (contractors and work orders, keys,
+inspections, expenses, mileage, applicant decisions, property value and
+mortgage, the all-payments list) work in demo mode. Their API methods are
+defined in `packages/core/src/client.ts`, but the matching backend routes and
+database tables are **not written yet**, so they will fail against a deployed
+backend until those are added.
+
+## Not built, and why
+
+- Direct Debit collection: needs GoCardless partner approval.
+- Making Tax Digital submissions to HMRC: needs HMRC recognition as a software
+  provider. The finance tool gives tax-year figures to copy across instead.
+- Xero, e-signatures, SMS reminders: each needs an account with that provider.
+- Section 8 and Section 13 notice drafts, deposit prescribed information,
+  tenancy agreements: legal documents that need solicitor-approved templates
+  for each nation.
+- Adverts and viewings, inventories with check-in and check-out reports, the
+  deposit dispute pack, possession tracker, Right to Rent wizard, bulk upload,
+  spreadsheet import, reading dates off certificates, accountant read-only
+  access, AI advisor: not started.
 
 ## Known gaps (next work, in order)
 

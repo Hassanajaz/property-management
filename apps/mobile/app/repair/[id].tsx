@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { TENANT_STATUS_LABEL, canTransition, isLandlord, type MaintenanceRequestDto, type MaintenanceStatus } from '@lettly/core';
+import { TENANT_STATUS_LABEL, canTransition, formatPence, isLandlord, type ContractorDto, type MaintenanceRequestDto, type MaintenanceStatus } from '@lettly/core';
+import { poundsToPence } from '../../src/hooks';
 import { useSession } from '../../src/session';
-import { Button, StatusBadge, styles } from '../../src/ui';
+import { Button, Chip, StatusBadge, styles } from '../../src/ui';
 
 /** Steps the landlord can take, in workflow order. Only the ones allowed from the current status are shown. */
 const LANDLORD_STEPS: { to: MaintenanceStatus; label: string }[] = [
@@ -29,6 +30,9 @@ export default function Repair() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { api, identity } = useSession();
   const [repair, setRepair] = useState<MaintenanceRequestDto | null>(null);
+  const [contractors, setContractors] = useState<ContractorDto[]>([]);
+  const [quote, setQuote] = useState('');
+  const [cost, setCost] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -38,19 +42,20 @@ export default function Repair() {
     setLoading(true);
     try {
       setRepair(await api.getMaintenance(id));
+      if (identity && isLandlord(identity.role)) setContractors(await api.listContractors());
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load');
     } finally {
       setLoading(false);
     }
-  }, [api, id]);
+  }, [api, id, identity]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function send(update: { status?: MaintenanceStatus; message?: string; appointmentAt?: string }) {
+  async function send(update: { status?: MaintenanceStatus; message?: string; appointmentAt?: string; contractorId?: string | null; quotePence?: number | null; costPence?: number | null }) {
     setBusy(true);
     setError(null);
     try {
@@ -104,6 +109,45 @@ export default function Repair() {
                 />
               ))}
               <Text style={styles.muted}>Anything typed in the message box below is sent with the update.</Text>
+            </View>
+          ) : null}
+
+          {role && isLandlord(role) ? (
+            <View style={styles.card}>
+              <Text style={styles.h2}>Work order</Text>
+              <Text style={styles.body}>
+                {repair.contractorName ? `Contractor: ${repair.contractorName}` : 'No contractor assigned yet'}
+                {repair.quotePence != null ? ` · quoted ${formatPence(repair.quotePence)}` : ''}
+                {repair.costPence != null ? ` · final cost ${formatPence(repair.costPence)}` : ''}
+              </Text>
+              <Text style={styles.label}>Contractor</Text>
+              <View style={styles.row}>
+                {contractors.map((c) => (
+                  <Chip key={c.id} label={c.name} selected={repair.contractorId === c.id} onPress={() => send({ contractorId: c.id })} />
+                ))}
+              </View>
+              {contractors.length === 0 ? <Text style={styles.muted}>Add contractors under Tools on the home screen.</Text> : null}
+              <Text style={styles.label}>Quote in pounds</Text>
+              <TextInput style={styles.input} value={quote} onChangeText={setQuote} keyboardType="decimal-pad" placeholder="0.00" />
+              <Text style={styles.label}>Final cost in pounds</Text>
+              <TextInput style={styles.input} value={cost} onChangeText={setCost} keyboardType="decimal-pad" placeholder="0.00" />
+              <Button
+                title="Save quote and cost"
+                kind="secondary"
+                busy={busy}
+                onPress={() => {
+                  const quotePence = quote.trim() ? poundsToPence(quote) : undefined;
+                  const costPence = cost.trim() ? poundsToPence(cost) : undefined;
+                  if (quotePence === null || costPence === null) {
+                    setError('Enter amounts in pounds, for example 95.00.');
+                    return;
+                  }
+                  if (quotePence === undefined && costPence === undefined) return;
+                  setQuote('');
+                  setCost('');
+                  void send({ quotePence, costPence });
+                }}
+              />
             </View>
           ) : null}
 

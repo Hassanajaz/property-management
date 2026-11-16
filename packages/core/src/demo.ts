@@ -3,10 +3,15 @@ import {
   type ApiClient,
   type ApplicationDto,
   type ComplianceItemDto,
+  type ContractorDto,
   type DocumentDto,
+  type ExpenseDto,
+  type InspectionDto,
+  type KeyDto,
   type LedgerPaymentDto,
   type MaintenanceRequestDto,
   type MaintenanceUpdateDto,
+  type MileageDto,
   type PropertyDto,
   type TenancyDto,
 } from './client.ts';
@@ -45,6 +50,11 @@ interface DemoStore {
   tenancies: DemoTenancy[];
   documents: DocumentDto[];
   applications: ApplicationDto[];
+  contractors: ContractorDto[];
+  keys: KeyDto[];
+  inspections: InspectionDto[];
+  expenses: ExpenseDto[];
+  mileage: MileageDto[];
   items: DemoItem[];
   repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[] })[];
   nextId: number;
@@ -67,10 +77,10 @@ function hoursAgo(hours: number): string {
 function seed(): DemoStore {
   const now = today();
   const properties: PropertyDto[] = [
-    { id: TENANT_PROPERTY_ID, addressLine1: '14 Maple Road', addressLine2: null, town: 'Leeds', postcode: 'LS6 2AB', nation: 'england', hasGas: true, isHmo: false },
-    { id: 'demo-property-2', addressLine1: 'Flat 3, 22 Harbour Street', addressLine2: null, town: 'Cardiff', postcode: 'CF10 5AA', nation: 'wales', hasGas: true, isHmo: false },
-    { id: 'demo-property-3', addressLine1: '8 Glen View', addressLine2: null, town: 'Edinburgh', postcode: 'EH6 4QQ', nation: 'scotland', hasGas: false, isHmo: true },
-    { id: 'demo-property-4', addressLine1: '5 Orchard Close', addressLine2: null, town: 'Bristol', postcode: 'BS7 8QT', nation: 'england', hasGas: true, isHmo: false },
+    { id: TENANT_PROPERTY_ID, addressLine1: '14 Maple Road', addressLine2: null, town: 'Leeds', postcode: 'LS6 2AB', nation: 'england', hasGas: true, isHmo: false, valuePence: 24500000, mortgagePence: 14200000 },
+    { id: 'demo-property-2', addressLine1: 'Flat 3, 22 Harbour Street', addressLine2: null, town: 'Cardiff', postcode: 'CF10 5AA', nation: 'wales', hasGas: true, isHmo: false, valuePence: 18000000, mortgagePence: 9900000 },
+    { id: 'demo-property-3', addressLine1: '8 Glen View', addressLine2: null, town: 'Edinburgh', postcode: 'EH6 4QQ', nation: 'scotland', hasGas: false, isHmo: true, valuePence: 16500000, mortgagePence: null },
+    { id: 'demo-property-4', addressLine1: '5 Orchard Close', addressLine2: null, town: 'Bristol', postcode: 'BS7 8QT', nation: 'england', hasGas: true, isHmo: false, valuePence: 31000000, mortgagePence: 20150000 },
   ];
 
   // Months since each certificate was last done, chosen to show every status.
@@ -220,6 +230,10 @@ function seed(): DemoStore {
       reportedAt: hoursAgo(50),
       appointmentAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
       photoDocumentIds: [],
+      contractorId: 'demo-contractor-1',
+      contractorName: 'Northside Heating',
+      quotePence: 9500,
+      costPence: null,
       updates: [
         { id: 'demo-update-1', createdAt: hoursAgo(50), authorRole: 'tenant', status: 'reported', message: null },
         { id: 'demo-update-2', createdAt: hoursAgo(46), authorRole: 'landlord', status: 'triaged', message: 'Thanks for reporting this. I am arranging a heating engineer.' },
@@ -262,7 +276,56 @@ function seed(): DemoStore {
     },
   ];
 
-  return { properties, tenancies, documents, applications, items, repairs, nextId: 100 };
+  const contractors: ContractorDto[] = [
+    { id: 'demo-contractor-1', name: 'Northside Heating', trade: 'Gas and heating', phone: '0113 496 0101', gasSafeNumber: '512345', electricalScheme: null, insuranceExpiry: addMonths(now, 7), rating: 5 },
+    { id: 'demo-contractor-2', name: 'Brightwire Electrical', trade: 'Electrician', phone: '029 2018 0144', gasSafeNumber: null, electricalScheme: 'NICEIC', insuranceExpiry: addDays(now, -12), rating: 4 },
+    { id: 'demo-contractor-3', name: 'Harper Property Care', trade: 'General repairs and fencing', phone: '0117 496 0177', gasSafeNumber: null, electricalScheme: null, insuranceExpiry: addMonths(now, 3), rating: 4 },
+  ];
+
+  const keys: KeyDto[] = [
+    { id: 'demo-key-1', propertyId: first.id, propertyAddress: address(first), label: 'Front door, set 1', holder: 'Priya Shah', movements: [{ date: tenancyStart, action: 'issued', person: 'Priya Shah' }] },
+    { id: 'demo-key-2', propertyId: first.id, propertyAddress: address(first), label: 'Front door, set 2', holder: 'Tom Reed', movements: [{ date: tenancyStart, action: 'issued', person: 'Tom Reed' }] },
+    { id: 'demo-key-3', propertyId: first.id, propertyAddress: address(first), label: 'Spare set', holder: 'Northside Heating', movements: [{ date: addDays(now, -1), action: 'issued', person: 'Northside Heating' }] },
+    { id: 'demo-key-4', propertyId: fourth.id, propertyAddress: address(fourth), label: 'Front door and garage', holder: null, movements: [
+      { date: addDays(now, -9), action: 'issued', person: 'Viewing agent' },
+      { date: addDays(now, -8), action: 'returned', person: 'Viewing agent' },
+    ] },
+  ];
+
+  const inspections: InspectionDto[] = [
+    { id: 'demo-inspection-1', propertyId: second.id, propertyAddress: address(second), date: addDays(now, 5), status: 'planned', noticeGivenOn: null, notes: null },
+    { id: 'demo-inspection-2', propertyId: first.id, propertyAddress: address(first), date: addDays(now, 70), status: 'planned', noticeGivenOn: null, notes: null },
+    { id: 'demo-inspection-3', propertyId: third.id, propertyAddress: address(third), date: addDays(now, -45), status: 'done', noticeGivenOn: addDays(now, -52), notes: 'Good condition. Minor mould on bathroom sealant; tenant to clean, re-check next visit.' },
+  ];
+
+  let expenseNo = 0;
+  const spent = (property: PropertyDto | null, daysAgo: number, category: ExpenseDto['category'], description: string, amountPence: number): ExpenseDto => ({
+    id: `demo-expense-${(expenseNo += 1)}`,
+    propertyId: property?.id ?? null,
+    propertyAddress: property ? address(property) : null,
+    date: addDays(now, -daysAgo),
+    category,
+    description,
+    amountPence,
+  });
+  const expenses: ExpenseDto[] = [
+    spent(first, 20, 'repairs', 'Replacement extractor fan, fitted', 14500),
+    spent(first, 35, 'insurance', 'Landlord buildings insurance, annual', 28900),
+    spent(first, 15, 'mortgage_interest', 'Mortgage interest, month', 47300),
+    spent(second, 15, 'mortgage_interest', 'Mortgage interest, month', 33000),
+    spent(second, 60, 'repairs', 'Boiler service', 8500),
+    spent(third, 45, 'services', 'Communal cleaning, quarter', 12000),
+    spent(fourth, 12, 'letting_fees', 'Online advert listing', 9900),
+    spent(null, 28, 'legal_professional', 'Accountant, bookkeeping', 18000),
+  ];
+
+  const mileage: MileageDto[] = [
+    { id: 'demo-mileage-1', date: addDays(now, -45), miles: 38, purpose: 'Inspection at 8 Glen View' },
+    { id: 'demo-mileage-2', date: addDays(now, -20), miles: 12, purpose: 'Meet electrician at 14 Maple Road' },
+    { id: 'demo-mileage-3', date: addDays(now, -9), miles: 46, purpose: 'Viewings at 5 Orchard Close' },
+  ];
+
+  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, items, repairs, nextId: 100 };
 }
 
 function demoStore(): DemoStore {
@@ -324,6 +387,10 @@ export function createDemoApi(role: Role): ApiClient {
       { startDate: tenancy.startDate, endDate: tenancy.endDate ?? undefined, amountPence: tenancy.rentAmountPence, frequency: tenancy.rentFrequency },
       onDate,
     );
+
+  const onlyLandlord = (): void => {
+    if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
+  };
 
   const withoutUpdates = ({ updates: _updates, ...repair }: DemoStore['repairs'][number]): MaintenanceRequestDto => repair;
 
@@ -404,8 +471,18 @@ export function createDemoApi(role: Role): ApiClient {
         throw new ApiError(409, `This request cannot be moved from "${repair.status}" to "${input.status}" by your account`);
       }
       if (input.appointmentAt && !landlord) throw new ApiError(403, 'Only the landlord can do this');
+      if ((input.contractorId !== undefined || input.quotePence !== undefined || input.costPence !== undefined) && !landlord) {
+        throw new ApiError(403, 'Only the landlord can do this');
+      }
       if (input.status) repair.status = input.status;
       if (input.appointmentAt) repair.appointmentAt = input.appointmentAt;
+      if (input.contractorId !== undefined) {
+        const contractor = s.contractors.find((c) => c.id === input.contractorId);
+        repair.contractorId = contractor?.id ?? null;
+        repair.contractorName = contractor?.name ?? null;
+      }
+      if (input.quotePence !== undefined) repair.quotePence = input.quotePence;
+      if (input.costPence !== undefined) repair.costPence = input.costPence;
       repair.updates.push({
         id: `demo-update-${(s.nextId += 1)}`,
         createdAt: new Date().toISOString(),
@@ -444,6 +521,130 @@ export function createDemoApi(role: Role): ApiClient {
     listApplications: async () => {
       if (role === 'tenant') throw new ApiError(403, 'Not available for tenant accounts');
       return s.applications.filter((a) => canSee(a.propertyId));
+    },
+
+    decideApplication: async (id, input) => {
+      onlyLandlord();
+      const application = s.applications.find((a) => a.id === id);
+      if (!application) throw new ApiError(404, 'Application not found');
+      if (!input.reason.trim()) throw new ApiError(400, 'Give a reason for the decision');
+      application.status = input.status;
+      application.decisionReason = input.reason;
+      return application;
+    },
+
+    convertApplication: async (id, input) => {
+      onlyLandlord();
+      const application = s.applications.find((a) => a.id === id);
+      if (!application) throw new ApiError(404, 'Application not found');
+      if (application.status !== 'passed') throw new ApiError(409, 'Only an applicant who has passed referencing can be made the tenant');
+      if (s.tenancies.some((t) => t.propertyId === application.propertyId && t.status === 'active')) {
+        throw new ApiError(409, 'This property already has a current tenancy');
+      }
+      const tenancy: DemoTenancy = {
+        id: `demo-tenancy-${(s.nextId += 1)}`, propertyId: application.propertyId, tenantNames: [application.applicantName],
+        startDate: input.startDate, endDate: null, rentAmountPence: application.monthlyRentPence, rentFrequency: 'monthly',
+        depositPence: 0, depositScheme: null, status: 'active', payments: [],
+      };
+      s.tenancies.push(tenancy);
+      // Other applicants for the same property are closed.
+      for (const other of s.applications) {
+        if (other.propertyId === application.propertyId && other.id !== id && other.status !== 'failed' && other.status !== 'passed') other.status = 'withdrawn';
+      }
+      const { payments, ...rest } = tenancy;
+      return { ...rest, propertyAddress: application.propertyAddress, balancePence: 0, daysInArrears: 0 };
+    },
+
+    updateProperty: async (id, input) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === id);
+      if (!property) throw new ApiError(404, 'Property not found');
+      if (input.valuePence !== undefined) property.valuePence = input.valuePence;
+      if (input.mortgagePence !== undefined) property.mortgagePence = input.mortgagePence;
+      return property;
+    },
+
+    recordPayment: async (tenancyId, input) => {
+      onlyLandlord();
+      const tenancy = s.tenancies.find((t) => t.id === tenancyId);
+      if (!tenancy) throw new ApiError(404, 'Tenancy not found');
+      if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new ApiError(400, 'Enter an amount above zero');
+      const payment: LedgerPaymentDto = { id: `demo-payment-new-${(s.nextId += 1)}`, date: input.date, amountPence: input.amountPence, method: input.method, status: 'confirmed' };
+      tenancy.payments.push(payment);
+      return payment;
+    },
+
+    listPayments: async () => {
+      onlyLandlord();
+      return s.tenancies.flatMap((t) => t.payments.filter((p) => p.status === 'confirmed').map((p) => ({ id: p.id, tenancyId: t.id, date: p.date, amountPence: p.amountPence })));
+    },
+
+    listContractors: async () => (onlyLandlord(), [...s.contractors]),
+    addContractor: async (input) => {
+      onlyLandlord();
+      if (!input.name.trim()) throw new ApiError(400, 'Enter the contractor\'s name');
+      const contractor: ContractorDto = { ...input, id: `demo-contractor-${(s.nextId += 1)}` };
+      s.contractors.push(contractor);
+      return contractor;
+    },
+
+    listKeys: async () => (onlyLandlord(), [...s.keys]),
+    addKey: async (input) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === input.propertyId);
+      if (!property) throw new ApiError(404, 'Property not found');
+      const key: KeyDto = { id: `demo-key-${(s.nextId += 1)}`, propertyId: property.id, propertyAddress: address(property), label: input.label, holder: null, movements: [] };
+      s.keys.push(key);
+      return key;
+    },
+    moveKey: async (id, input) => {
+      onlyLandlord();
+      const key = s.keys.find((k) => k.id === id);
+      if (!key) throw new ApiError(404, 'Key not found');
+      if (input.action === 'issued' && key.holder) throw new ApiError(409, `This key is already out with ${key.holder}`);
+      if (input.action === 'returned' && !key.holder) throw new ApiError(409, 'This key is already with you');
+      const person = input.action === 'returned' ? key.holder! : input.person.trim();
+      if (!person) throw new ApiError(400, 'Say who is taking the key');
+      key.movements.push({ date: today(), action: input.action, person });
+      key.holder = input.action === 'issued' ? person : null;
+      return key;
+    },
+
+    listInspections: async () => (onlyLandlord(), [...s.inspections].sort((a, b) => a.date.localeCompare(b.date))),
+    planInspection: async (input) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === input.propertyId);
+      if (!property) throw new ApiError(404, 'Property not found');
+      const inspection: InspectionDto = { id: `demo-inspection-${(s.nextId += 1)}`, propertyId: property.id, propertyAddress: address(property), date: input.date, status: 'planned', noticeGivenOn: null, notes: null };
+      s.inspections.push(inspection);
+      return inspection;
+    },
+    updateInspection: async (id, input) => {
+      onlyLandlord();
+      const inspection = s.inspections.find((i) => i.id === id);
+      if (!inspection) throw new ApiError(404, 'Inspection not found');
+      if (input.status) inspection.status = input.status;
+      if (input.noticeGivenOn) inspection.noticeGivenOn = input.noticeGivenOn;
+      if (input.notes !== undefined) inspection.notes = input.notes;
+      return inspection;
+    },
+
+    listExpenses: async () => (onlyLandlord(), [...s.expenses].sort((a, b) => b.date.localeCompare(a.date))),
+    addExpense: async (input) => {
+      onlyLandlord();
+      if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new ApiError(400, 'Enter an amount above zero');
+      const property = input.propertyId ? s.properties.find((p) => p.id === input.propertyId) : undefined;
+      const expense: ExpenseDto = { ...input, id: `demo-expense-new-${(s.nextId += 1)}`, propertyId: property?.id ?? null, propertyAddress: property ? address(property) : null };
+      s.expenses.push(expense);
+      return expense;
+    },
+    listMileage: async () => (onlyLandlord(), [...s.mileage].sort((a, b) => b.date.localeCompare(a.date))),
+    addMileage: async (input) => {
+      onlyLandlord();
+      if (!(input.miles > 0)) throw new ApiError(400, 'Enter the miles travelled');
+      const trip: MileageDto = { ...input, id: `demo-mileage-new-${(s.nextId += 1)}` };
+      s.mileage.push(trip);
+      return trip;
     },
 
     // Demo mode has no file storage: an empty uploadUrl tells the app to skip the upload.

@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import {
   APPLICATION_STATUS_LABEL,
   CHECK_LABEL,
@@ -11,7 +11,9 @@ import {
   LANDLORD_UPLOAD_TYPES,
   TENANT_STATUS_LABEL,
   formatPence,
+  occupancy,
   portfolioSummary,
+  propertiesCsv,
   today,
   type ApplicationDto,
   type ComplianceItemDto,
@@ -19,9 +21,11 @@ import {
   type DocumentDto,
   type DocumentType,
   type MaintenanceRequestDto,
+  type Nation,
   type PropertyDto,
   type TenancyDto,
 } from '@lettly/core';
+import { percent, useAction } from './hooks';
 import { useSession } from './session';
 import { Button, Chip, StatusBadge, colors, styles } from './ui';
 
@@ -183,8 +187,20 @@ const APPLICATION_TONE: Record<ApplicationDto['status'], ComplianceStatus> = {
 };
 const CHECK_COLOR = { passed: colors.good, failed: colors.bad, pending: colors.warn, not_required: colors.muted } as const;
 
-export function ApplicationCard({ application, showAddress = true }: { application: ApplicationDto; showAddress?: boolean }) {
+export function ApplicationCard({ application, showAddress = true, onChanged }: { application: ApplicationDto; showAddress?: boolean; onChanged?: () => void }) {
+  const { api } = useSession();
+  const save = useAction();
+  const [reason, setReason] = useState('');
   const passed = application.checks.filter((c) => c.status === 'passed').length;
+  const open = application.status === 'invited' || application.status === 'submitted' || application.status === 'in_review';
+
+  async function decide(status: 'passed' | 'failed') {
+    if (await save.run(() => api.decideApplication(application.id, { status, reason }))) {
+      setReason('');
+      onChanged?.();
+    }
+  }
+
   return (
     <View style={styles.card}>
       <StatusBadge status={APPLICATION_TONE[application.status]} label={APPLICATION_STATUS_LABEL[application.status]} />
@@ -208,7 +224,87 @@ export function ApplicationCard({ application, showAddress = true }: { applicati
           <Text style={[styles.body, { color: CHECK_COLOR[check.status] }]}>{CHECK_STATUS_LABEL[check.status]}</Text>
         </View>
       ))}
-      {application.decisionReason ? <Text style={styles.muted}>{application.decisionReason}</Text> : null}
+      {application.decisionReason ? <Text style={styles.muted}>Decision: {application.decisionReason}</Text> : null}
+
+      {onChanged && open ? (
+        <>
+          <Text style={styles.label}>Your decision and the reason for it</Text>
+          <TextInput style={styles.input} value={reason} onChangeText={setReason} placeholder="e.g. All references satisfactory" maxLength={300} />
+          <Text style={styles.muted}>Keep the reason factual. Do not refuse someone because they have children or receive benefits.</Text>
+          <Button title="Referencing passed" onPress={() => decide('passed')} busy={save.busy} />
+          <Button title="Not passed" kind="secondary" onPress={() => decide('failed')} busy={save.busy} />
+        </>
+      ) : null}
+      {onChanged && application.status === 'passed' ? (
+        <Button
+          title="Make them the tenant from today"
+          busy={save.busy}
+          onPress={async () => {
+            if (await save.run(() => api.convertApplication(application.id, { startDate: today() }))) onChanged();
+          }}
+        />
+      ) : null}
+      {save.error ? <Text style={styles.error}>{save.error}</Text> : null}
+    </View>
+  );
+}
+
+/** Form for adding a new property to the account. */
+export function AddProperty({ onAdded }: { onAdded: () => void }) {
+  const { api } = useSession();
+  const save = useAction();
+  const [open, setOpen] = useState(false);
+  const [addressLine1, setAddressLine1] = useState('');
+  const [town, setTown] = useState('');
+  const [postcode, setPostcode] = useState('');
+  const [nation, setNation] = useState<Nation>('england');
+  const [hasGas, setHasGas] = useState(true);
+  const [isHmo, setIsHmo] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function add() {
+    if (!addressLine1.trim() || !town.trim() || postcode.trim().length < 5) {
+      setFormError('Enter the address, town and postcode.');
+      return;
+    }
+    setFormError(null);
+    const ok = await save.run(() =>
+      api.createProperty({ addressLine1: addressLine1.trim(), addressLine2: null, town: town.trim(), postcode: postcode.trim().toUpperCase(), nation, hasGas, isHmo }),
+    );
+    if (ok) {
+      setAddressLine1('');
+      setTown('');
+      setPostcode('');
+      setOpen(false);
+      onAdded();
+    }
+  }
+
+  if (!open) return <Button title="Add a property" kind="secondary" onPress={() => setOpen(true)} />;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.h2}>Add a property</Text>
+      <Text style={styles.label}>Address</Text>
+      <TextInput style={styles.input} value={addressLine1} onChangeText={setAddressLine1} />
+      <Text style={styles.label}>Town</Text>
+      <TextInput style={styles.input} value={town} onChangeText={setTown} />
+      <Text style={styles.label}>Postcode</Text>
+      <TextInput style={styles.input} value={postcode} onChangeText={setPostcode} autoCapitalize="characters" maxLength={8} />
+      <Text style={styles.label}>Nation (decides which rules apply)</Text>
+      <View style={styles.row}>
+        {(['england', 'wales', 'scotland', 'northern_ireland'] as const).map((n) => (
+          <Chip key={n} label={n === 'northern_ireland' ? 'Northern Ireland' : n.charAt(0).toUpperCase() + n.slice(1)} selected={nation === n} onPress={() => setNation(n)} />
+        ))}
+      </View>
+      <View style={styles.row}>
+        <Chip label="Has a gas supply" selected={hasGas} onPress={() => setHasGas((v) => !v)} />
+        <Chip label="House in multiple occupation" selected={isHmo} onPress={() => setIsHmo((v) => !v)} />
+      </View>
+      {formError ?? save.error ? <Text style={styles.error}>{formError ?? save.error}</Text> : null}
+      <Button title="Add property" onPress={add} busy={save.busy} />
+      <Button title="Cancel" kind="secondary" onPress={() => setOpen(false)} />
+      <Text style={styles.muted}>The certificates and checks this property needs are added automatically.</Text>
     </View>
   );
 }
@@ -289,7 +385,16 @@ export function AddDocument({ properties, fixedPropertyId, onAdded }: { properti
 }
 
 // ------------------------------------------------------------------ dashboard
-const SECTIONS = ['Overview', 'Properties', 'Rent', 'Compliance', 'Repairs', 'Documents', 'Applicants'] as const;
+const SECTIONS = ['Overview', 'Properties', 'Rent', 'Compliance', 'Repairs', 'Documents', 'Applicants', 'Tools'] as const;
+
+const TOOLS: { href: string; title: string; hint: string }[] = [
+  { href: '/tools/finance', title: 'Finance and tax year', hint: 'Income, expenses, mileage and profit for your tax return' },
+  { href: '/tools/reminders', title: 'Reminders', hint: 'What falls due in the next 60 days' },
+  { href: '/tools/rent-reviews', title: 'Rent reviews', hint: 'When each rent can next be increased' },
+  { href: '/tools/inspections', title: 'Inspections', hint: 'Plan visits and record notice given' },
+  { href: '/tools/contractors', title: 'Contractors', hint: 'Trades you use, their registrations and insurance' },
+  { href: '/tools/keys', title: 'Key register', hint: 'Where every key is, with each handover logged' },
+];
 type Section = (typeof SECTIONS)[number];
 
 function Stat({ label, value, hint, tone, onPress }: { label: string; value: string; hint?: string; tone?: string; onPress: () => void }) {
@@ -330,7 +435,7 @@ export function Portfolio() {
         {data && summary && section === 'Overview' ? (
           <>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-              <Stat label="Properties" value={String(summary.properties)} hint={`${summary.let} let · ${summary.vacant} vacant`} onPress={() => setSection('Properties')} />
+              <Stat label="Properties" value={String(summary.properties)} hint={`${summary.let} let · ${summary.vacant} vacant · ${percent(occupancy(data.properties, data.tenancies))} occupied`} onPress={() => setSection('Properties')} />
               <Stat label="Rent per month" value={formatPence(summary.monthlyRentPence)} hint="Across current tenancies" onPress={() => setSection('Rent')} />
               <Stat
                 label="Rent arrears"
@@ -364,6 +469,17 @@ export function Portfolio() {
               .slice(0, 6)
               .map((i) => <ComplianceCard key={i.id} item={i} onChanged={load} />)}
             {summary.repairsToReview === 0 && summary.tenanciesInArrears === 0 && summary.complianceAttention === 0 ? <Text style={styles.muted}>Nothing needs attention right now.</Text> : null}
+          </>
+        ) : null}
+
+        {data && section === 'Properties' ? (
+          <>
+            <AddProperty onAdded={load} />
+            <Button
+              title="Share the properties table (CSV)"
+              kind="secondary"
+              onPress={() => void Share.share({ title: 'Properties', message: propertiesCsv(data.properties, data.tenancies, data.compliance) })}
+            />
           </>
         ) : null}
 
@@ -428,10 +544,19 @@ export function Portfolio() {
         {data && section === 'Applicants' ? (
           <>
             <Text style={styles.muted}>People applying to rent your properties, with the progress of their referencing checks.</Text>
-            {data.applications.map((a) => <ApplicationCard key={a.id} application={a} />)}
+            {data.applications.map((a) => <ApplicationCard key={a.id} application={a} onChanged={load} />)}
             {data.applications.length === 0 ? <Text style={styles.muted}>No applicants at the moment.</Text> : null}
           </>
         ) : null}
+
+        {section === 'Tools'
+          ? TOOLS.map((tool) => (
+              <Pressable key={tool.href} accessibilityRole="button" onPress={() => router.push(tool.href)} style={styles.card}>
+                <Text style={styles.h2}>{tool.title}</Text>
+                <Text style={styles.muted}>{tool.hint}</Text>
+              </Pressable>
+            ))
+          : null}
 
         <View style={{ marginTop: 24, gap: 8 }}>
           <Text style={styles.muted}>Signed in as {identity.email}</Text>
