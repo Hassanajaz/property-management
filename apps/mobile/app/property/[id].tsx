@@ -55,6 +55,7 @@ export default function Property() {
               <Text style={styles.muted}>
                 Deposit £{(t.depositPence / 100).toFixed(2)} · {t.depositScheme ? `held with ${t.depositScheme}` : 'not yet protected in a scheme'}
               </Text>
+              <InviteTenant tenancy={t} />
             </View>
           ))}
 
@@ -191,6 +192,50 @@ function AddTenancy({ propertyId, onAdded }: { propertyId: string; onAdded: () =
       {formError ?? save.error ? <Text style={styles.error}>{formError ?? save.error}</Text> : null}
       <Button title="Start tenancy" onPress={submit} busy={save.busy} />
       <Button title="Cancel" kind="secondary" onPress={() => setOpen(false)} />
+    </View>
+  );
+}
+
+/** Gives a tenant a sign-in for their tenancy. On the local server no email is sent, so the password is shown to pass on. */
+function InviteTenant({ tenancy }: { tenancy: TenancyDto }) {
+  const { mode, inviteTenant } = useSession();
+  const save = useAction();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(tenancy.tenantNames[0] ?? '');
+  const [email, setEmail] = useState('');
+  const [result, setResult] = useState<string | null>(null);
+
+  if (mode !== 'local') return null;
+  if (!open) return <Button title="Give a tenant a sign-in" kind="secondary" onPress={() => setOpen(true)} />;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.h2}>Give a tenant a sign-in</Text>
+      <Text style={styles.label}>Tenant</Text>
+      <View style={styles.row}>
+        {tenancy.tenantNames.map((n) => (
+          <Chip key={n} label={n} selected={name === n} onPress={() => setName(n)} />
+        ))}
+      </View>
+      <Text style={styles.label}>Their email address</Text>
+      <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+      {save.error ? <Text style={styles.error}>{save.error}</Text> : null}
+      {result ? <Text style={styles.body}>{result}</Text> : null}
+      <Button
+        title="Create sign-in"
+        busy={save.busy}
+        onPress={() =>
+          void save.run(async () => {
+            const password = await inviteTenant({ tenancyId: tenancy.id, name, email: email.trim() });
+            setResult(
+              password
+                ? `Done. Tell ${name} to sign in with ${email.trim().toLowerCase()} and this temporary password: ${password}`
+                : `${email.trim().toLowerCase()} already had a sign-in and can now see this tenancy too.`,
+            );
+          })
+        }
+      />
+      <Button title="Close" kind="secondary" onPress={() => setOpen(false)} />
     </View>
   );
 }

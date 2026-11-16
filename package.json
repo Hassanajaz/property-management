@@ -8,15 +8,16 @@
     "infra"
   ],
   "scripts": {
-    "test": "npm test --workspace @lettly/core",
+    "test": "npm test --workspace @lettly/core && npm test --workspace @lettly/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:web": "npm run web --workspace @lettly/mobile",
     "dev:mobile": "npm run start --workspace @lettly/mobile",
     "deploy": "npm run deploy --workspace @lettly/infra --",
-    "build:web": "npm run build:web --workspace @lettly/mobile"
+    "build:web": "npm run build:web --workspace @lettly/mobile",
+    "server": "npm start --workspace @lettly/server"
   },
   "engines": {
-    "node": ">=22.6"
+    "node": ">=22.13"
   },
   "overrides": {
     "react": "19.1.0",

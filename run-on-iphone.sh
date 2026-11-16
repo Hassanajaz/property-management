@@ -81,5 +81,14 @@ if ! xcodebuild -showsdks 2>/dev/null | grep -q iphoneos || ! xcrun simctl list 
   xcodebuild -downloadPlatform iOS || echo "Could not download automatically. In Xcode open Settings > Components and get iOS, then run this again."
 fi
 
+# Apply the app's settings (name, permissions, local-network access) to the Xcode project.
+npx expo prebuild --platform ios
+
+if [ -f .env ] && grep -q '^EXPO_PUBLIC_API_URL=http' .env; then
+  echo "Building for the local server at $(grep '^EXPO_PUBLIC_API_URL=' .env | cut -d= -f2). Keep run-local.sh running on this Mac."
+else
+  echo "No server address set: building in demo mode with sample data."
+fi
+
 echo "Installing to device $DEVICE_ID"
 exec npx expo run:ios --device "$DEVICE_ID" --configuration Release

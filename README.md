@@ -16,6 +16,7 @@ The design document is in [docs/DESIGN.md](docs/DESIGN.md).
 | --- | --- | --- |
 | `packages/core` | Shared rules: compliance rules for all four nations, rent schedule and arrears, affordability, maintenance workflow, plans, sign-in, API client and demo data | **Tested** (27 tests) and type-checked |
 | `apps/api` | API (Hono on AWS Lambda), database schema (Drizzle, PostgreSQL), row-level security, invites, maintenance, documents, rent ledger, GoCardless webhook | Written, **not yet run** |
+| `apps/server` | Local server and database (SQLite file, no installs) with accounts, tenant sign-ins and file uploads | **Tested** end to end |
 | `apps/mobile` | The app for iPhone, web and Android (Expo): landlord dashboard and tools, tenant home, demo mode | Runs on iPhone; **web not yet run** |
 | `infra` | AWS CDK stack for London (`eu-west-2`) with a budget alarm | Written, **not yet deployed** |
 
@@ -23,6 +24,35 @@ Only `packages/core` could be executed where this was written, because package
 installs were blocked there. Expect to fix small type or version errors in the
 other folders on the first `npm install` and `npm run typecheck`. Package
 versions were chosen from memory and may need bumping.
+
+## Run it on your own computer (local database)
+
+This is the way to use the app with real, saved data and real logins without
+any cloud account:
+
+```bash
+bash run-local.sh
+```
+
+It starts a small server on your Mac with its data in one database file
+(`data/lettly.db`), then opens the app in your browser. Choose "Create a
+landlord account" the first time. Leave the Terminal window open while you use
+it; Ctrl+C stops everything, and your data is still there next time.
+
+- **iPhone:** keep `run-local.sh` running, then in a second Terminal window run
+  `bash run-on-iphone.sh`. The installed app talks to the server on your Mac,
+  so the phone must be on the same Wi-Fi, and it stops working if the Mac is
+  asleep or its Wi-Fi address changes (rebuild to fix).
+- **Tenant logins:** open a property with a tenancy and use "Give a tenant a
+  sign-in". No email is sent from a local server, so the app shows a temporary
+  password for you to pass on.
+- **Backups:** copy the `data` folder. Delete it to start again from nothing.
+- **Back to demo mode:** delete `apps/mobile/.env`.
+
+The local server needs Node 22.13 or later and no other installs. It keeps
+each landlord account's data as one document, which is right for testing and
+for one landlord's own use, not for hosting many customers. The AWS setup in
+`infra/` and `apps/api/` remains the route to a hosted service.
 
 ## Try it on your iPhone (demo mode, no backend)
 
@@ -76,7 +106,7 @@ sign-up credits still apply).
 
 ```bash
 npm install
-npm test                # shared rules: should print 27 passing tests
+npm test                # shared rules and local server: all tests should pass
 npm run typecheck       # fix anything reported before going further
 
 ```
@@ -123,15 +153,15 @@ npm run dev:mobile                    # or scan the QR code with Expo Go
   completes it; each update emails the tenant (and sends a push notification
   once the app registers push tokens); the tenant confirms the fix or reopens it.
 
-## Demo only for now
+## Not in the AWS backend yet
 
-The landlord tools added most recently (contractors and work orders, keys,
+Every feature works on the local server and in demo mode. The landlord tools added most recently (contractors and work orders, keys,
 inspections, expenses, mileage, applicant decisions, property value and
 mortgage, the all-payments list, inventories, Right to Rent records, deposit
-scheme) work in demo mode. Their API methods are
-defined in `packages/core/src/client.ts`, but the matching backend routes and
+scheme) have API methods
+defined in `packages/core/src/client.ts`, but the matching AWS routes and
 database tables are **not written yet**, so they will fail against a deployed
-backend until those are added.
+AWS backend until those are added.
 
 ## Not built, and why
 

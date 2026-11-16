@@ -12,3 +12,4 @@ export * from './client.ts';
 export * from './demo.ts';
 export * from './portfolio.ts';
 export * from './tools.ts';
+export * from './local.ts';

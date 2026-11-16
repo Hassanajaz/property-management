@@ -48,7 +48,8 @@ interface DemoItem {
 
 type DemoTenancy = Omit<TenancyDto, 'propertyAddress' | 'balancePence' | 'daysInArrears'> & { payments: LedgerPaymentDto[] };
 
-interface DemoStore {
+/** Everything held for one landlord's account. Plain data, so it can be saved as JSON. */
+export interface DemoStore {
   properties: PropertyDto[];
   tenancies: DemoTenancy[];
   documents: DocumentDto[];
@@ -61,7 +62,7 @@ interface DemoStore {
   inventories: Record<string, InventoryItemDto[]>;
   rightToRent: RightToRentDto[];
   items: DemoItem[];
-  repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[] })[];
+  repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[]; tenancyId: string })[];
   nextId: number;
 }
 
@@ -79,7 +80,8 @@ function hoursAgo(hours: number): string {
   return new Date(Date.now() - hours * 3_600_000).toISOString();
 }
 
-function seed(): DemoStore {
+/** The sample portfolio used by demo mode, and offered when a new local account is created. */
+export function seedSampleStore(): DemoStore {
   const now = today();
   const properties: PropertyDto[] = [
     { id: TENANT_PROPERTY_ID, addressLine1: '14 Maple Road', addressLine2: null, town: 'Leeds', postcode: 'LS6 2AB', nation: 'england', hasGas: true, isHmo: false, valuePence: 24500000, mortgagePence: 14200000 },
@@ -225,6 +227,7 @@ function seed(): DemoStore {
   const repairs: DemoStore['repairs'] = [
     {
       id: 'demo-repair-1',
+      tenancyId: TENANT_TENANCY_ID,
       propertyId: first.id,
       propertyAddress: address(first),
       title: 'Boiler keeps losing pressure',
@@ -247,6 +250,7 @@ function seed(): DemoStore {
     },
     {
       id: 'demo-repair-2',
+      tenancyId: TENANT_TENANCY_ID,
       propertyId: first.id,
       propertyAddress: address(first),
       title: 'Bathroom extractor fan very noisy',
@@ -265,6 +269,7 @@ function seed(): DemoStore {
     },
     {
       id: 'demo-repair-3',
+      tenancyId: 'demo-tenancy-2',
       propertyId: second.id,
       propertyAddress: address(second),
       title: 'Back fence panel blown down',
@@ -353,7 +358,7 @@ function seed(): DemoStore {
 }
 
 function demoStore(): DemoStore {
-  store ??= seed();
+  store ??= seedSampleStore();
   return store;
 }
 
@@ -362,12 +367,39 @@ export function resetDemo(): void {
   store = null;
 }
 
-export function createDemoApi(role: Role): ApiClient {
-  const s = demoStore();
-  const landlord = isLandlord(role);
+/** A new account with nothing in it. */
+export function emptyStore(): DemoStore {
+  return {
+    properties: [], tenancies: [], documents: [], applications: [], contractors: [], keys: [], inspections: [],
+    expenses: [], mileage: [], inventories: {}, rightToRent: [], items: [], repairs: [], nextId: 100,
+  };
+}
 
-  // The landlord sees the whole account; the tenant sees only their own home.
-  const visibleProperties = (): PropertyDto[] => (landlord ? s.properties : s.properties.filter((p) => p.id === TENANT_PROPERTY_ID));
+/** Who is using the account: the landlord, or a tenant limited to the tenancies they are on. */
+export type Viewer = { role: 'landlord' } | { role: 'tenant'; tenancyIds: readonly string[] };
+
+/** Demo mode: the sample account, as the landlord or as the sample tenant. */
+export function createDemoApi(role: Role): ApiClient {
+  return createStoreApi(demoStore(), role === 'landlord' ? { role } : { role, tenancyIds: [TENANT_TENANCY_ID] });
+}
+
+/**
+ * The whole application API working directly on one account's data. Demo mode
+ * uses it in memory; the local server uses it with the data saved to a
+ * database file after every change.
+ */
+export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
+  const role: Role = viewer.role;
+  const landlord = isLandlord(role);
+  const ownTenancyIds: readonly string[] = viewer.role === 'tenant' ? viewer.tenancyIds : [];
+
+  // The landlord sees the whole account; a tenant sees only the homes and tenancies they are on.
+  const canSeeTenancy = (tenancyId: string | null) => landlord || (tenancyId !== null && ownTenancyIds.includes(tenancyId));
+  const visibleProperties = (): PropertyDto[] => {
+    if (landlord) return s.properties;
+    const propertyIds = new Set(s.tenancies.filter((t) => ownTenancyIds.includes(t.id)).map((t) => t.propertyId));
+    return s.properties.filter((p) => propertyIds.has(p.id));
+  };
   const canSee = (propertyId: string) => visibleProperties().some((p) => p.id === propertyId);
 
   const present = (item: DemoItem, onDate: IsoDate): { dto: ComplianceItemDto; state: RequirementState } | null => {
@@ -402,7 +434,7 @@ export function createDemoApi(role: Role): ApiClient {
 
   const findRepair = (id: string) => {
     const repair = s.repairs.find((r) => r.id === id);
-    if (!repair || !canSee(repair.propertyId)) throw new ApiError(404, 'Request not found');
+    if (!repair || !canSeeTenancy(repair.tenancyId)) throw new ApiError(404, 'Request not found');
     return repair;
   };
 
@@ -422,7 +454,7 @@ export function createDemoApi(role: Role): ApiClient {
   const inventoryDto = (tenancyId: string): InventoryDto => {
     const tenancy = s.tenancies.find((t) => t.id === tenancyId);
     const property = s.properties.find((p) => p.id === tenancy?.propertyId);
-    if (!tenancy || !property || !canSee(property.id)) throw new ApiError(404, 'Tenancy not found');
+    if (!tenancy || !property || !canSeeTenancy(tenancy.id)) throw new ApiError(404, 'Tenancy not found');
     return { tenancyId, propertyAddress: address(property), tenantNames: tenancy.tenantNames, items: [...(s.inventories[tenancyId] ?? [])] };
   };
 
@@ -470,7 +502,7 @@ export function createDemoApi(role: Role): ApiClient {
 
     listMaintenance: async () =>
       s.repairs
-        .filter((repair) => canSee(repair.propertyId))
+        .filter((repair) => canSeeTenancy(repair.tenancyId))
         .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
         .map(withoutUpdates),
 
@@ -481,12 +513,15 @@ export function createDemoApi(role: Role): ApiClient {
 
     reportMaintenance: async (input) => {
       // The landlord can log a repair for any tenancy; a tenant's goes against their own home.
-      const tenancy = landlord ? s.tenancies.find((t) => t.id === input.tenancyId) : s.tenancies.find((t) => t.id === TENANT_TENANCY_ID);
+      const tenancy = landlord
+        ? s.tenancies.find((t) => t.id === input.tenancyId)
+        : s.tenancies.find((t) => ownTenancyIds.includes(t.id) && t.status === 'active' && (!input.tenancyId || t.id === input.tenancyId));
       if (!tenancy) throw new ApiError(400, 'Choose the tenancy this repair is for');
       const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
       const now = new Date().toISOString();
       const repair: DemoStore['repairs'][number] = {
         id: `demo-repair-${(s.nextId += 1)}`,
+        tenancyId: tenancy.id,
         propertyId: property.id,
         propertyAddress: address(property),
         title: input.title,
@@ -534,7 +569,7 @@ export function createDemoApi(role: Role): ApiClient {
     listTenancies: async () => {
       const onDate = today();
       return s.tenancies
-        .filter((tenancy) => canSee(tenancy.propertyId))
+        .filter((tenancy) => canSeeTenancy(tenancy.id))
         .map(({ payments, ...tenancy }) => {
           const summary = arrears(ledgerCharges(tenancy, onDate), payments, onDate);
           const property = s.properties.find((p) => p.id === tenancy.propertyId)!;
@@ -544,7 +579,7 @@ export function createDemoApi(role: Role): ApiClient {
 
     getLedger: async (tenancyId) => {
       const tenancy = s.tenancies.find((t) => t.id === tenancyId);
-      if (!tenancy || !canSee(tenancy.propertyId)) throw new ApiError(404, 'Tenancy not found');
+      if (!tenancy || !canSeeTenancy(tenancy.id)) throw new ApiError(404, 'Tenancy not found');
       const onDate = today();
       const charges = ledgerCharges(tenancy, onDate);
       return { charges, payments: [...tenancy.payments], summary: arrears(charges, tenancy.payments, onDate) };
@@ -552,7 +587,7 @@ export function createDemoApi(role: Role): ApiClient {
 
     listDocuments: async () =>
       s.documents
-        .filter((d) => d.propertyId !== null && canSee(d.propertyId))
+        .filter((d) => d.propertyId !== null && canSee(d.propertyId) && (d.tenancyId === null || canSeeTenancy(d.tenancyId)))
         .filter((d) => landlord || TENANT_DOCUMENT_TYPES.includes(d.type))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 
@@ -753,7 +788,7 @@ export function createDemoApi(role: Role): ApiClient {
     // Demo mode has no file storage: an empty uploadUrl tells the app to skip the upload.
     requestUpload: async (input) => {
       const documentId = `demo-document-${(s.nextId += 1)}`;
-      const property = s.properties.find((p) => p.id === (input.propertyId ?? TENANT_PROPERTY_ID));
+      const property = s.properties.find((p) => p.id === (input.propertyId ?? s.tenancies.find((t) => t.id === (input.tenancyId ?? ownTenancyIds[0]))?.propertyId));
       if (input.propertyId && !canSee(input.propertyId)) throw new ApiError(403, 'Not your property');
       s.documents.push({
         id: documentId,

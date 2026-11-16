@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Text, TextInput, View } from 'react-native';
 import { setNewPassword, signIn } from '@lettly/core';
-import { authConfig, useSession } from '../src/session';
-import { Button, styles } from '../src/ui';
+import { API_URL, authConfig, useSession } from '../src/session';
+import { Button, Chip, styles } from '../src/ui';
 
 
 /** One sign-in for landlords and tenants. */
 export default function SignIn() {
-  const { signedIn, demo, signInDemo } = useSession();
+  const { signedIn, demo, signInDemo, mode, signInLocal, signUpLocal } = useSession();
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [sample, setSample] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPasswordValue] = useState('');
@@ -45,6 +48,51 @@ export default function SignIn() {
           <Button title="Tenant" kind="secondary" onPress={() => signInDemo('tenant')} />
         </View>
       </View>
+    );
+  }
+
+  if (mode === 'local') {
+    const submitLocal = async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        if (creating) await signUpLocal({ name: name.trim(), email: email.trim(), password, sample });
+        else await signInLocal(email.trim(), password);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Sign-in failed');
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.page, { justifyContent: 'center' }]}>
+        <View style={styles.content}>
+          <Text style={styles.h1}>{creating ? 'Create a landlord account' : 'Sign in'}</Text>
+          <Text style={styles.muted}>
+            {creating ? 'Tenants do not create accounts: their landlord gives them a sign-in.' : 'Landlords and tenants sign in here.'}
+          </Text>
+          {creating ? (
+            <>
+              <Text style={styles.label}>Your name</Text>
+              <TextInput style={styles.input} value={name} onChangeText={setName} autoComplete="name" />
+            </>
+          ) : null}
+          <Text style={styles.label}>Email</Text>
+          <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
+          <Text style={styles.label}>{creating ? 'Password (at least 8 characters)' : 'Password'}</Text>
+          <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry autoComplete={creating ? 'new-password' : 'current-password'} />
+          {creating ? (
+            <View style={styles.row}>
+              <Chip label="Start with sample properties" selected={sample} onPress={() => setSample(true)} />
+              <Chip label="Start empty" selected={!sample} onPress={() => setSample(false)} />
+            </View>
+          ) : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Button title={creating ? 'Create account' : 'Sign in'} onPress={submitLocal} busy={busy} />
+          <Button title={creating ? 'I already have an account' : 'Create a landlord account'} kind="secondary" onPress={() => { setCreating((v) => !v); setError(null); }} />
+          <Text style={styles.muted}>Server: {API_URL}</Text>
+        </View>
+      </KeyboardAvoidingView>
     );
   }
 
