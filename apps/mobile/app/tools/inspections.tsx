@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { inspectionNotice, today } from '@lettly/core';
 import { useAction, useLoad } from '../../src/hooks';
+import { AddPhoto, Photos } from '../../src/photos';
 import { useSession } from '../../src/session';
 import { Button, Chip, StatusBadge, colors, styles } from '../../src/ui';
 
@@ -47,6 +48,10 @@ export default function Inspections() {
             <Text style={styles.h2}>{inspection.propertyAddress}</Text>
             {inspection.status === 'done' ? <Text style={styles.muted}>Visited {inspection.date}</Text> : null}
             {inspection.notes ? <Text style={styles.body}>{inspection.notes}</Text> : null}
+            <Photos documentIds={inspection.photoDocumentIds} />
+            {inspection.status !== 'cancelled' ? (
+              <AddPhoto type="inspection_photo" propertyId={inspection.propertyId} onAdded={async (documentId) => (await save.run(() => api.addInspectionPhoto(inspection.id, documentId))) && reload()} />
+            ) : null}
 
             {inspection.status === 'planned' ? (
               <>

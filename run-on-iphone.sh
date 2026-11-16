@@ -84,6 +84,13 @@ fi
 # Apply the app's settings (name, permissions, local-network access) to the Xcode project.
 npx expo prebuild --platform ios
 
+# Alerts are set on the phone itself, so the app does not need Apple's push
+# notification service. A free Apple account cannot sign an app that asks for
+# it, so take the request out if the build tools added it.
+for entitlements in ios/*/*.entitlements; do
+  [ -f "$entitlements" ] && /usr/libexec/PlistBuddy -c "Delete :aps-environment" "$entitlements" 2>/dev/null || true
+done
+
 if [ -f .env ] && grep -q '^EXPO_PUBLIC_API_URL=http' .env; then
   echo "Building for the local server at $(grep '^EXPO_PUBLIC_API_URL=' .env | cut -d= -f2). Keep run-local.sh running on this Mac."
 else

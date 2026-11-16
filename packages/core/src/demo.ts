@@ -2,6 +2,10 @@ import {
   ApiError,
   type ApiClient,
   type ApplicationDto,
+  type BackupDto,
+  type LicenceDto,
+  type MeterReadingDto,
+  type RecurringExpenseDto,
   type ComplianceItemDto,
   type ContractorDto,
   type DocumentDto,
@@ -30,6 +34,7 @@ import { TENANT_DOCUMENT_TYPES } from './portfolio.ts';
 import { affordability } from './referencing/affordability.ts';
 import { arrears } from './rent/ledger.ts';
 import { generateSchedule, rentOn } from './rent/schedule.ts';
+import { METER_KINDS, LICENCE_KINDS, recurringDueDates } from './more.ts';
 import { canAdvancePossession, parsePropertiesCsv } from './tools.ts';
 import { isLandlord, type DocumentType, type Role } from './types.ts';
 
@@ -49,6 +54,8 @@ interface DemoItem {
   completedOn: IsoDate | null;
   expiresOn: IsoDate | null;
   dueDate: IsoDate | null;
+  /** Earlier completions, oldest first. */
+  history?: { completedOn: IsoDate; expiresOn: IsoDate | null }[];
 }
 
 /** `rentAmountPence` is the rent at the start; later changes are listed in `rentChanges`. */
@@ -74,6 +81,9 @@ export interface DemoStore {
   notices: NoticeDto[];
   possessionCases: PossessionCaseDto[];
   templates: TemplateDto[];
+  recurringExpenses: RecurringExpenseDto[];
+  meterReadings: MeterReadingDto[];
+  licences: LicenceDto[];
   items: DemoItem[];
   repairs: (MaintenanceRequestDto & { updates: MaintenanceUpdateDto[]; tenancyId: string })[];
   nextId: number;
@@ -131,6 +141,8 @@ export function seedSampleStore(): DemoStore {
         completedOn: months === null ? null : addMonths(now, -months),
         expiresOn: null,
         dueDate: null,
+        // Yearly gas checks have a couple of earlier certificates on file.
+        history: months !== null && family === 'gas_safety' ? [24, 12].map((earlier) => ({ completedOn: addMonths(now, -months - earlier), expiresOn: addMonths(now, -months - earlier + 12) })) : undefined,
       });
     }
   });
@@ -389,7 +401,24 @@ export function seedSampleStore(): DemoStore {
     },
   ];
 
-  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, inventories, rightToRent, viewings, notices, possessionCases: [], templates, items, repairs, nextId: 100 };
+  const recurringExpenses: RecurringExpenseDto[] = [
+    { id: 'demo-recurring-1', propertyId: first.id, propertyAddress: address(first), category: 'mortgage_interest', description: 'Mortgage interest', amountPence: 47300, frequency: 'monthly', startDate: addDays(now, -15), endDate: null, postedThrough: addDays(now, -15) },
+    { id: 'demo-recurring-2', propertyId: second.id, propertyAddress: address(second), category: 'mortgage_interest', description: 'Mortgage interest', amountPence: 33000, frequency: 'monthly', startDate: addDays(now, -15), endDate: null, postedThrough: addDays(now, -15) },
+    { id: 'demo-recurring-3', propertyId: first.id, propertyAddress: address(first), category: 'insurance', description: 'Landlord buildings insurance', amountPence: 28900, frequency: 'yearly', startDate: addDays(now, -35), endDate: null, postedThrough: addDays(now, -35) },
+  ];
+  const meterReadings: MeterReadingDto[] = [
+    { id: 'demo-meter-1', propertyId: first.id, propertyAddress: address(first), meter: 'gas', reading: 4821, date: tenancyStart, occasion: 'move_in', photoDocumentId: null, recordedBy: 'landlord' },
+    { id: 'demo-meter-2', propertyId: first.id, propertyAddress: address(first), meter: 'electricity', reading: 30977, date: tenancyStart, occasion: 'move_in', photoDocumentId: null, recordedBy: 'landlord' },
+    { id: 'demo-meter-3', propertyId: first.id, propertyAddress: address(first), meter: 'water', reading: 612, date: tenancyStart, occasion: 'move_in', photoDocumentId: null, recordedBy: 'landlord' },
+    { id: 'demo-meter-4', propertyId: first.id, propertyAddress: address(first), meter: 'electricity', reading: 31102, date: addDays(now, -2), occasion: 'routine', photoDocumentId: null, recordedBy: 'tenant' },
+  ];
+  const licences: LicenceDto[] = [
+    { id: 'demo-licence-1', propertyId: third.id, propertyAddress: address(third), kind: 'hmo_mandatory', authority: 'City of Edinburgh Council', reference: 'HMO/24/01187', issuedOn: addMonths(now, -34), expiresOn: addMonths(now, 2), maxOccupants: 5, conditions: 'Fire doors to all bedrooms. Annual emergency lighting test. No more than 5 occupants.' },
+    { id: 'demo-licence-2', propertyId: third.id, propertyAddress: address(third), kind: 'landlord_registration', authority: 'Scottish Landlord Register', reference: '412345/230/11020', issuedOn: addMonths(now, -20), expiresOn: addMonths(now, 16), maxOccupants: null, conditions: null },
+    { id: 'demo-licence-3', propertyId: first.id, propertyAddress: address(first), kind: 'selective', authority: 'Leeds City Council', reference: 'SL-0092231', issuedOn: addMonths(now, -30), expiresOn: addMonths(now, 30), maxOccupants: null, conditions: 'Written tenancy agreement. References taken for every tenant. Property inspected at least every six months.' },
+  ];
+
+  return { properties, tenancies, documents, applications, contractors, keys, inspections, expenses, mileage, inventories, rightToRent, viewings, notices, possessionCases: [], templates, recurringExpenses, meterReadings, licences, items, repairs, nextId: 100 };
 }
 
 function demoStore(): DemoStore {
@@ -406,7 +435,7 @@ export function resetDemo(): void {
 export function emptyStore(): DemoStore {
   return {
     properties: [], tenancies: [], documents: [], applications: [], contractors: [], keys: [], inspections: [],
-    expenses: [], mileage: [], inventories: {}, rightToRent: [], viewings: [], notices: [], possessionCases: [], templates: [], items: [], repairs: [], nextId: 100,
+    expenses: [], mileage: [], inventories: {}, rightToRent: [], viewings: [], notices: [], possessionCases: [], templates: [], recurringExpenses: [], meterReadings: [], licences: [], items: [], repairs: [], nextId: 100,
   };
 }
 
@@ -429,6 +458,9 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
   s.notices ??= [];
   s.possessionCases ??= [];
   s.templates ??= [];
+  s.recurringExpenses ??= [];
+  s.meterReadings ??= [];
+  s.licences ??= [];
 
   const role: Role = viewer.role;
   const landlord = isLandlord(role);
@@ -469,6 +501,7 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
         expiresOn: item.expiresOn ?? (item.completedOn ? (nextDue(rule, item.completedOn) ?? null) : null),
         dueDate: item.dueDate,
         documentId: null,
+        history: [...(item.history ?? [])].reverse(),
       },
     };
   };
@@ -529,6 +562,20 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
     return { tenancyId, propertyAddress: address(property), tenantNames: tenancy.tenantNames, items: [...(s.inventories[tenancyId] ?? [])] };
   };
 
+  // Adds an expense for every date a repeating cost has fallen due since it was last looked at.
+  const postRecurring = (): void => {
+    const onDate = today();
+    for (const recurring of s.recurringExpenses) {
+      for (const date of recurringDueDates(recurring, onDate)) {
+        s.expenses.push({
+          id: `demo-expense-new-${(s.nextId += 1)}`, propertyId: recurring.propertyId, propertyAddress: recurring.propertyAddress,
+          date, category: recurring.category, description: `${recurring.description} (repeating)`, amountPence: recurring.amountPence,
+        });
+        recurring.postedThrough = date;
+      }
+    }
+  };
+
   const onlyLandlord = (): void => {
     if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
   };
@@ -558,6 +605,12 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
       if (!landlord) throw new ApiError(403, 'Only the landlord can do this');
       const item = s.items.find((i) => i.id === id);
       if (!item) throw new ApiError(404, 'Compliance item not found');
+      // The certificate being replaced is kept, so there is a record of every year.
+      if (item.completedOn && item.completedOn !== input.completedOn) {
+        const rule = rulesById.get(item.ruleId);
+        (item.history ??= []).push({ completedOn: item.completedOn, expiresOn: item.expiresOn ?? (rule ? (nextDue(rule, item.completedOn) ?? null) : null) });
+        item.history.sort((a, b) => a.completedOn.localeCompare(b.completedOn));
+      }
       item.completedOn = input.completedOn;
       item.expiresOn = input.expiresOn ?? null;
       return present(item, today())!.dto;
@@ -857,6 +910,13 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
       item.checkOutNote = input.note?.trim() || null;
       return inventoryDto(tenancyId);
     },
+    addInventoryPhoto: async (tenancyId, itemId, documentId) => {
+      onlyLandlord();
+      const item = (s.inventories[tenancyId] ?? []).find((i) => i.id === itemId);
+      if (!item) throw new ApiError(404, 'Inventory item not found');
+      (item.photoDocumentIds ??= []).push(documentId);
+      return inventoryDto(tenancyId);
+    },
 
     listRightToRent: async () => (onlyLandlord(), [...s.rightToRent]),
     recordRightToRent: async (input) => {
@@ -921,8 +981,83 @@ export function createStoreApi(s: DemoStore, viewer: Viewer): ApiClient {
       if (input.notes !== undefined) inspection.notes = input.notes;
       return inspection;
     },
+    addInspectionPhoto: async (id, documentId) => {
+      onlyLandlord();
+      const inspection = s.inspections.find((i) => i.id === id);
+      if (!inspection) throw new ApiError(404, 'Inspection not found');
+      (inspection.photoDocumentIds ??= []).push(documentId);
+      return inspection;
+    },
 
-    listExpenses: async () => (onlyLandlord(), [...s.expenses].sort((a, b) => b.date.localeCompare(a.date))),
+    listMeterReadings: async () => s.meterReadings.filter((r) => canSee(r.propertyId)).sort((a, b) => b.date.localeCompare(a.date)),
+    addMeterReading: async (input) => {
+      const property = s.properties.find((p) => p.id === input.propertyId);
+      if (!property || !canSee(property.id)) throw new ApiError(404, 'Property not found');
+      if (!METER_KINDS.includes(input.meter)) throw new ApiError(400, 'Choose which meter this is');
+      if (!Number.isFinite(input.reading) || input.reading < 0) throw new ApiError(400, 'Enter the reading as a number');
+      const reading: MeterReadingDto = {
+        id: `demo-meter-${(s.nextId += 1)}`, propertyId: property.id, propertyAddress: address(property), meter: input.meter, reading: input.reading,
+        date: input.date, occasion: input.occasion, photoDocumentId: input.photoDocumentId ?? null, recordedBy: role,
+      };
+      s.meterReadings.push(reading);
+      return reading;
+    },
+
+    listLicences: async () => (onlyLandlord(), [...s.licences].sort((a, b) => a.expiresOn.localeCompare(b.expiresOn))),
+    saveLicence: async (input) => {
+      onlyLandlord();
+      const property = s.properties.find((p) => p.id === input.propertyId);
+      if (!property) throw new ApiError(404, 'Property not found');
+      if (!LICENCE_KINDS.includes(input.kind)) throw new ApiError(400, 'Choose the kind of licence');
+      if (!input.authority.trim()) throw new ApiError(400, 'Say which council or body issued it');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.expiresOn)) throw new ApiError(400, 'Enter the date it expires');
+      const { id, ...fields } = input;
+      const licence: LicenceDto = { ...fields, authority: input.authority.trim(), id: id ?? `demo-licence-${(s.nextId += 1)}`, propertyAddress: address(property) };
+      const index = s.licences.findIndex((l) => l.id === id);
+      if (index >= 0) s.licences[index] = licence;
+      else s.licences.push(licence);
+      return licence;
+    },
+
+    exportData: async () => {
+      onlyLandlord();
+      return { app: 'lettly', version: 1, exportedAt: new Date().toISOString(), data: JSON.parse(JSON.stringify(s)) as unknown } satisfies BackupDto;
+    },
+    restoreData: async (backup) => {
+      onlyLandlord();
+      const data = backup?.data as Partial<DemoStore> | undefined;
+      if (backup?.app !== 'lettly' || !data || !Array.isArray(data.properties) || !Array.isArray(data.tenancies) || !Array.isArray(data.items)) {
+        throw new ApiError(400, 'That file is not a backup made by this app');
+      }
+      const restored = JSON.parse(JSON.stringify(data)) as DemoStore;
+      for (const key of Object.keys(s) as (keyof DemoStore)[]) delete s[key];
+      Object.assign(s, emptyStore(), restored);
+      return { restored: true as const };
+    },
+
+    listExpenses: async () => (onlyLandlord(), postRecurring(), [...s.expenses].sort((a, b) => b.date.localeCompare(a.date))),
+    listRecurringExpenses: async () => (onlyLandlord(), postRecurring(), [...s.recurringExpenses]),
+    addRecurringExpense: async (input) => {
+      onlyLandlord();
+      if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new ApiError(400, 'Enter an amount above zero');
+      if (!input.description.trim()) throw new ApiError(400, 'Say what the cost is');
+      const property = input.propertyId ? s.properties.find((p) => p.id === input.propertyId) : undefined;
+      const recurring: RecurringExpenseDto = {
+        id: `demo-recurring-${(s.nextId += 1)}`, propertyId: property?.id ?? null, propertyAddress: property ? address(property) : null,
+        category: input.category, description: input.description.trim(), amountPence: input.amountPence, frequency: input.frequency,
+        startDate: input.startDate, endDate: null, postedThrough: null,
+      };
+      s.recurringExpenses.push(recurring);
+      postRecurring();
+      return recurring;
+    },
+    stopRecurringExpense: async (id, input) => {
+      onlyLandlord();
+      const recurring = s.recurringExpenses.find((r) => r.id === id);
+      if (!recurring) throw new ApiError(404, 'Repeating cost not found');
+      recurring.endDate = input.endDate;
+      return recurring;
+    },
     addExpense: async (input) => {
       onlyLandlord();
       if (!Number.isInteger(input.amountPence) || input.amountPence <= 0) throw new ApiError(400, 'Enter an amount above zero');

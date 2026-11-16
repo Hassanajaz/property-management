@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { CONDITIONS, CONDITION_LABEL, inventoryChanges, inventoryReport, isLandlord, type Condition } from '@lettly/core';
 import { useAction, useLoad } from '../../src/hooks';
+import { AddPhoto, Photos } from '../../src/photos';
 import { ShareButtons } from '../../src/share';
 import { useSession } from '../../src/session';
 import { Button, Chip, colors, styles } from '../../src/ui';
@@ -57,8 +58,10 @@ export default function Inventory() {
                         {entry.checkOutNote ? ` · ${entry.checkOutNote}` : ''}
                       </Text>
                     ) : null}
+                    <Photos documentIds={entry.photoDocumentIds} />
                     {landlord ? (
                       <>
+                        <AddPhoto type="inventory_photo" tenancyId={id} onAdded={async (documentId) => (await save.run(() => api.addInventoryPhoto(id, entry.id, documentId))) && reload()} />
                         <Text style={styles.label}>{entry.checkOut ? 'Change check-out condition' : 'Record condition at check-out'}</Text>
                         <TextInput
                           style={styles.input}

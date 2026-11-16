@@ -14,3 +14,4 @@ export * from './portfolio.ts';
 export * from './tools.ts';
 export * from './local.ts';
 export * from './templates.ts';
+export * from './more.ts';

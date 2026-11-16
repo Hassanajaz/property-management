@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { arrearsMessage, formatPence, isLandlord, paymentRate, receiptText, rentReview, today } from '@lettly/core';
+import { arrearsMessage, formatPence, isLandlord, paymentRate, receiptText, rentReview, rentStatement, today } from '@lettly/core';
 import { poundsToPence, useAction, useLoad } from '../../src/hooks';
 import { sharePdf } from '../../src/platform';
 import { ShareButtons } from '../../src/share';
@@ -46,7 +46,7 @@ export default function RentStatement() {
   const ledger = data?.ledger;
   const tenancy = data?.tenancy;
   const now = today();
-  const landlordName = identity?.email ?? 'Your landlord';
+  const landlordName = landlord ? (identity?.email ?? 'Your landlord') : 'Your landlord';
 
   const lines: Line[] = ledger
     ? [
@@ -181,7 +181,8 @@ export default function RentStatement() {
           {note ? <Text style={styles.muted}>{note}</Text> : null}
 
           <Text style={[styles.h2, { marginTop: 8 }]}>Statement</Text>
-          {landlord ? <Text style={styles.muted}>Tap a payment to share a PDF receipt.</Text> : null}
+          {tenancy ? <ShareButtons title="Rent statement" label="Full statement" text={() => rentStatement({ landlordName, tenancy, ledger, asOf: now })} /> : null}
+          <Text style={styles.muted}>Tap a payment for a PDF receipt.</Text>
           <View style={styles.card}>
             {lines.map((line) => {
               const row = (
@@ -196,7 +197,7 @@ export default function RentStatement() {
                   </Text>
                 </View>
               );
-              if (line.kind !== 'payment' || !landlord || !tenancy) return <View key={line.key}>{row}</View>;
+              if (line.kind !== 'payment' || !tenancy) return <View key={line.key}>{row}</View>;
               return (
                 <Pressable
                   key={line.key}

@@ -61,6 +61,9 @@ export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
   income_evidence: 'Income evidence',
   reference: 'Reference',
   maintenance_photo: 'Repair photo',
+  inventory_photo: 'Inventory photo',
+  inspection_photo: 'Inspection photo',
+  meter_photo: 'Meter photo',
   invoice: 'Invoice',
   other: 'Other document',
 };
@@ -77,10 +80,13 @@ export const LANDLORD_UPLOAD_TYPES: readonly DocumentType[] = [
  */
 export const PERSONAL_DOCUMENT_TYPES: readonly DocumentType[] = ['id_document', 'income_evidence', 'reference', 'right_to_rent_check'];
 
+/** Photos attached to a record. They are shown with that record, not in the list of documents. */
+export const PHOTO_DOCUMENT_TYPES: readonly DocumentType[] = ['maintenance_photo', 'inventory_photo', 'inspection_photo', 'meter_photo'];
+
 /** Document types a tenant may open for their own home. */
 export const TENANT_DOCUMENT_TYPES: readonly DocumentType[] = [
   'tenancy_agreement', 'written_statement', 'deposit_certificate', 'deposit_prescribed_information',
-  'gas_safety_record', 'eicr', 'epc', 'inventory', 'maintenance_photo',
+  'gas_safety_record', 'eicr', 'epc', 'inventory', 'maintenance_photo', 'inventory_photo', 'meter_photo',
 ];
 
 export const APPLICATION_STATUS_LABEL: Record<ApplicationStatus, string> = {

@@ -34,6 +34,9 @@ export type DocumentType =
   | 'income_evidence'
   | 'reference'
   | 'maintenance_photo'
+  | 'inventory_photo'
+  | 'inspection_photo'
+  | 'meter_photo'
   | 'invoice'
   | 'other';
 

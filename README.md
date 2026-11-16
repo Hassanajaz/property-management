@@ -93,6 +93,21 @@ applicants and tools. From it the landlord can:
 - record a rent change, end a tenancy, and share a compliance summary;
 - share every report (inventory, compliance summary, accountant pack, properties
   table, receipts, arrears reminders, adverts) as a PDF or as text;
+- share a full rent statement as a PDF (tenants can get their own statement and
+  receipts too);
+- record rent payments from a bank statement file, with each payment matched to
+  a tenancy for the landlord to confirm;
+- set up repeating costs (mortgage, insurance) that are added to the expenses
+  each time they fall due;
+- record gas, electricity and water readings with a photo of the meter (tenants
+  can send their own), and add photos to inventory items and inspections;
+- track HMO and selective licences and landlord registrations, with conditions
+  and a renewal warning 90 days ahead;
+- see earlier certificates for each requirement, not only the current one;
+- put every date ahead into their phone or computer calendar, and switch on
+  alerts on the phone 30 days before, 7 days before and on the day;
+- save a backup of everything (records, documents and photos) as one file, and
+  put a backup back;
 - use the tools: finance and tax-year figures with mileage and an accountant
   pack, rent reviews, inspections with the 24-hour notice check, contractors,
   the key register, the deposit register, Right to Rent checks with follow-up

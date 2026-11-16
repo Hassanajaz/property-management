@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ApiError, createStoreApi, emptyStore, seedSampleStore, type ApiClient, type DemoStore, type Role, type Viewer } from '../../../packages/core/src/index.ts';
+import { ApiError, createStoreApi, emptyStore, seedSampleStore, type ApiClient, type BackupDto, type DemoStore, type Role, type Viewer } from '../../../packages/core/src/index.ts';
 
 interface UserRow {
   id: string;
@@ -28,6 +28,8 @@ interface UserRow {
 
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_FILE_BYTES = 15_000_000;
+/** Restoring a backup sends every stored file back in one request. */
+const MAX_RPC_BYTES = 300_000_000;
 const SESSION_DAYS = 30;
 
 class HttpError extends Error {
@@ -124,8 +126,8 @@ export function startServer(options: { dataDir: string; port: number; host?: str
     return Buffer.concat(chunks);
   }
 
-  async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-    const body = await readBody(req, MAX_BODY_BYTES);
+  async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+    const body = await readBody(req, limit);
     try {
       const parsed: unknown = body.length ? JSON.parse(body.toString('utf8')) : {};
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('not an object');
@@ -233,7 +235,7 @@ export function startServer(options: { dataDir: string; port: number; host?: str
     // Every app action arrives here as { method, args } and runs against the account's data.
     if (req.method === 'POST' && url.pathname === '/rpc') {
       const user = userFromRequest(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_RPC_BYTES);
       const method = text(body.method);
       const args = Array.isArray(body.args) ? body.args : [];
       const api = createStoreApi(loadStore(user.account_id), viewerFor(user)) as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
@@ -253,6 +255,27 @@ export function startServer(options: { dataDir: string; port: number; host?: str
         const row = db.prepare('select stored from files where id = ? and account_id = ?').get(documentId, user.account_id) as { stored: number } | undefined;
         if (!visible || !row?.stored) throw new HttpError(404, 'There is no file stored for this document');
         result = { url: `${base}/files/${documentId}?t=${(req.headers.authorization ?? '').slice(7)}` };
+      } else if (method === 'exportData') {
+        // The backup carries the uploaded files as well as the records.
+        const backup = (await api.exportData!()) as BackupDto;
+        const rows = db.prepare('select id, content_type from files where account_id = ? and stored = 1').all(user.account_id) as { id: string; content_type: string }[];
+        backup.files = rows
+          .filter((row) => existsSync(join(filesDir, row.id)))
+          .map((row) => ({ id: row.id, contentType: row.content_type, base64: readFileSync(join(filesDir, row.id)).toString('base64') }));
+        result = backup;
+      } else if (method === 'restoreData') {
+        const backup = (args[0] ?? {}) as BackupDto;
+        result = await api.restoreData!(backup);
+        for (const file of Array.isArray(backup.files) ? backup.files : []) {
+          if (!/^[\w-]+$/.test(text(file.id)) || typeof file.base64 !== 'string') continue;
+          // A file id that belongs to another account is never overwritten.
+          const owner = db.prepare('select account_id from files where id = ?').get(file.id) as { account_id: string } | undefined;
+          if (owner && owner.account_id !== user.account_id) continue;
+          writeFileSync(join(filesDir, file.id), Buffer.from(file.base64, 'base64'));
+          db.prepare('insert into files (id, account_id, content_type, stored) values (?, ?, ?, 1) on conflict(id) do update set stored = 1, content_type = excluded.content_type').run(
+            file.id, user.account_id, text(file.contentType) || 'application/octet-stream',
+          );
+        }
       } else {
         result = await api[method]!(...args);
       }

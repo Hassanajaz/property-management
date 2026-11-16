@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
-import type { DocumentDto, MaintenanceRequestDto, TenancyDto } from '@lettly/core';
+import { PHOTO_DOCUMENT_TYPES, type DocumentDto, type MaintenanceRequestDto, type TenancyDto } from '@lettly/core';
 import { DocumentRow, Portfolio, RepairCard, TenancyCard } from '../src/portfolio';
 import { useSession } from '../src/session';
 import { Button, styles } from '../src/ui';
@@ -28,7 +28,7 @@ function TenantHome() {
       const [r, t, d] = await Promise.all([api.listMaintenance(), api.listTenancies(), api.listDocuments()]);
       setRepairs(r);
       setTenancies(t);
-      setDocuments(d);
+      setDocuments(d.filter((document) => !PHOTO_DOCUMENT_TYPES.includes(document.type)));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load');
     } finally {
@@ -50,6 +50,7 @@ function TenantHome() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <Button title="Report a repair" onPress={() => router.push('/report')} />
+      <Button title="Send a meter reading" kind="secondary" onPress={() => router.push('/tools/meters')} />
 
       <Text style={[styles.h2, { marginTop: 8 }]}>Your rent</Text>
       {tenancies.map((t) => <TenancyCard key={t.id} tenancy={t} />)}

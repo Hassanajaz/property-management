@@ -10,8 +10,8 @@
       "bundleIdentifier": "uk.co.hassanajaz.lettly",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Take photos of a repair problem or a certificate to attach to your report.",
-        "NSPhotoLibraryUsageDescription": "Choose photos of a repair problem or a certificate to attach to your report.",
+        "NSCameraUsageDescription": "Take photos of repairs, meters, inventory items and certificates to keep with your records.",
+        "NSPhotoLibraryUsageDescription": "Choose photos of repairs, meters, inventory items and certificates to keep with your records.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },

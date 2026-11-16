@@ -43,6 +43,10 @@ function Screens() {
       <Stack.Screen name="tools/templates" options={{ title: 'Document templates' }} />
       <Stack.Screen name="tools/import" options={{ title: 'Import properties' }} />
       <Stack.Screen name="tools/account" options={{ title: 'Your account' }} />
+      <Stack.Screen name="tools/bank-import" options={{ title: 'Bank statement import' }} />
+      <Stack.Screen name="tools/licences" options={{ title: 'Licences' }} />
+      <Stack.Screen name="tools/meters" options={{ title: 'Meter readings' }} />
+      <Stack.Screen name="tools/backup" options={{ title: 'Backup and restore' }} />
     </Stack>
   );
 }

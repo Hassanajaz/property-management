@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ScrollView, Text, TextInput, View } from 'react-native';
 import { parsePropertiesCsv } from '@lettly/core';
 import { useAction } from '../../src/hooks';
+import { pickTextFile } from '../../src/platform';
 import { useSession } from '../../src/session';
 import { Button, styles } from '../../src/ui';
 
@@ -19,6 +20,16 @@ export default function ImportProperties() {
       <Text style={styles.muted}>
         In your spreadsheet, put one property per row with these columns in this order: address, town, postcode, nation, gas (yes or no), HMO (yes or no). Select the rows, copy them, and paste them below.
       </Text>
+      <Button
+        title="Choose a CSV file instead"
+        kind="secondary"
+        onPress={() =>
+          void save.run(async () => {
+            const file = await pickTextFile(['text/csv', 'text/comma-separated-values', 'text/plain', 'public.comma-separated-values-text']);
+            if (file) setText(file.text);
+          })
+        }
+      />
       <TextInput
         style={[styles.input, { minHeight: 180, textAlignVertical: 'top' }]}
         value={text}

@@ -284,7 +284,7 @@ export function arrearsMessage(input: { tenantNames: string[]; propertyAddress: 
   ].join('\n');
 }
 
-function csvCell(value: string | number): string {
+export function csvCell(value: string | number): string {
   const text = String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
@@ -360,7 +360,7 @@ export function rightToRentState(check: Pick<RightToRentDto, 'expiresOn'>, today
 }
 
 // --------------------------------------------------------- spreadsheet import
-function parseCsvLine(line: string): string[] {
+export function parseCsvLine(line: string): string[] {
   const cells: string[] = [];
   let cell = '';
   let quoted = false;

@@ -59,6 +59,20 @@ test('local server: accounts, saved data, tenant sign-in, files and isolation', 
   assert.ok(!(await otherApi.listProperties()).some((p) => p.id === property.id && p.addressLine1 === '1 Test Street'));
   await assert.rejects(() => otherApi.downloadUrl(ticket.documentId));
 
+  // A backup carries the records and the stored files, and can be put back.
+  const backup = await landlord.exportData();
+  assert.equal(backup.files!.length, 1);
+  assert.equal(Buffer.from(backup.files![0]!.base64, 'base64').toString(), await (await fetch(url)).text());
+  await landlord.saveLicence({ propertyId: property.id, kind: 'selective', authority: 'Test Council', reference: null, issuedOn: null, expiresOn: '2030-01-01', maxOccupants: null, conditions: null });
+  assert.equal((await landlord.listLicences()).length, 1);
+  await landlord.restoreData(backup);
+  assert.equal((await landlord.listLicences()).length, 0);
+  assert.equal((await fetch(url)).status, 200);
+  // Another account cannot overwrite the file by restoring a backup that names it.
+  await otherApi.restoreData({ ...(await otherApi.exportData()), files: [{ id: ticket.documentId, contentType: 'text/plain', base64: Buffer.from('hijacked').toString('base64') }] });
+  assert.notEqual(await (await fetch(url)).text(), 'hijacked');
+  await assert.rejects(() => tenant.exportData());
+
   // Bad requests are refused.
   await assert.rejects(() => localSignIn(base, 'sam@example.com', 'wrong password'));
   await assert.rejects(() => createLocalClient(base, () => 'not-a-token').listProperties());

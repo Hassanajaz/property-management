@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
-import { EXPENSE_CATEGORY_LABEL, accountantPack, financeSummary, formatPence, taxYearOf, today, type ExpenseCategory } from '@lettly/core';
+import { EXPENSE_CATEGORY_LABEL, RECURRING_FREQUENCY_LABEL, accountantPack, financeSummary, formatPence, recurringYearlyPence, taxYearOf, today, type ExpenseCategory, type RecurringFrequency } from '@lettly/core';
 import { poundsToPence, useAction, useLoad } from '../../src/hooks';
 import { ShareButtons } from '../../src/share';
 import { useSession } from '../../src/session';
 import { Button, Chip, colors, styles } from '../../src/ui';
 
 const CATEGORIES = Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[];
+const FREQUENCIES = Object.keys(RECURRING_FREQUENCY_LABEL) as RecurringFrequency[];
 
 /** Income, expenses, mileage and profit for the current tax year. */
 export default function Finance() {
   const { api } = useSession();
   const { data, loading, error, reload } = useLoad(async () => {
+    // Repeating costs are read first: reading them adds any that have fallen due to the expenses.
+    const recurring = await api.listRecurringExpenses();
     const [payments, expenses, mileage, properties] = await Promise.all([api.listPayments(), api.listExpenses(), api.listMileage(), api.listProperties()]);
-    return { payments, expenses, mileage, properties };
+    return { payments, expenses, mileage, properties, recurring };
   });
   const save = useAction();
 
@@ -21,6 +24,7 @@ export default function Finance() {
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [repeats, setRepeats] = useState<RecurringFrequency | null>(null);
   const [miles, setMiles] = useState('');
   const [purpose, setPurpose] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -36,7 +40,10 @@ export default function Finance() {
       return;
     }
     setFormError(null);
-    if (await save.run(() => api.addExpense({ propertyId, date: today(), category, description: description.trim(), amountPence }))) {
+    const saved = repeats
+      ? await save.run(() => api.addRecurringExpense({ propertyId, category, description: description.trim(), amountPence, frequency: repeats, startDate: today() }))
+      : await save.run(() => api.addExpense({ propertyId, date: today(), category, description: description.trim(), amountPence }));
+    if (saved) {
       setDescription('');
       setAmount('');
       await reload();
@@ -110,7 +117,15 @@ export default function Finance() {
         <TextInput style={styles.input} value={description} onChangeText={setDescription} maxLength={200} />
         <Text style={styles.label}>Amount in pounds</Text>
         <TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
-        <Button title="Add expense, dated today" onPress={addExpense} busy={save.busy} />
+        <Text style={styles.label}>Does it repeat?</Text>
+        <View style={styles.row}>
+          <Chip label="One-off" selected={repeats === null} onPress={() => setRepeats(null)} />
+          {FREQUENCIES.map((f) => (
+            <Chip key={f} label={RECURRING_FREQUENCY_LABEL[f]} selected={repeats === f} onPress={() => setRepeats(f)} />
+          ))}
+        </View>
+        {repeats ? <Text style={styles.muted}>It is added today, then again automatically each time it falls due, until you stop it.</Text> : null}
+        <Button title={repeats ? 'Add repeating cost, starting today' : 'Add expense, dated today'} onPress={addExpense} busy={save.busy} />
       </View>
 
       <View style={styles.card}>
@@ -122,6 +137,26 @@ export default function Finance() {
         <Button title="Add trip, dated today" kind="secondary" onPress={addTrip} busy={save.busy} />
       </View>
       {formError ?? save.error ? <Text style={styles.error}>{formError ?? save.error}</Text> : null}
+
+      <Text style={[styles.h2, { marginTop: 8 }]}>Repeating costs</Text>
+      {data && data.recurring.length === 0 ? <Text style={styles.muted}>None yet. Add a mortgage, insurance or service charge above and choose how often it repeats.</Text> : null}
+      {(data?.recurring ?? []).map((r) => (
+        <View key={r.id} style={styles.card}>
+          <Row label={r.description} value={formatPence(r.amountPence)} />
+          <Text style={styles.muted}>
+            {EXPENSE_CATEGORY_LABEL[r.category]} · {RECURRING_FREQUENCY_LABEL[r.frequency].toLowerCase()} since {r.startDate}
+            {r.propertyAddress ? ` · ${r.propertyAddress}` : ''}
+          </Text>
+          {r.endDate ? (
+            <Text style={styles.muted}>Stopped on {r.endDate}</Text>
+          ) : (
+            <>
+              <Text style={styles.muted}>{formatPence(Math.round(recurringYearlyPence(r)))} a year</Text>
+              <Button title="Stop from today" kind="secondary" busy={save.busy} onPress={async () => (await save.run(() => api.stopRecurringExpense(r.id, { endDate: today() }))) && reload()} />
+            </>
+          )}
+        </View>
+      ))}
 
       <Text style={[styles.h2, { marginTop: 8 }]}>Expenses</Text>
       {(data?.expenses ?? []).map((e) => (

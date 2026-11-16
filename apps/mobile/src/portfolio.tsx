@@ -9,6 +9,7 @@ import {
   CHECK_STATUS_LABEL,
   DOCUMENT_TYPE_LABEL,
   LANDLORD_UPLOAD_TYPES,
+  PHOTO_DOCUMENT_TYPES,
   TENANT_STATUS_LABEL,
   formatPence,
   occupancy,
@@ -25,6 +26,7 @@ import {
   type PropertyDto,
   type TenancyDto,
 } from '@lettly/core';
+import { refreshAlerts } from './alerts';
 import { percent, useAction } from './hooks';
 import { ShareButtons } from './share';
 import { useSession } from './session';
@@ -60,8 +62,10 @@ export function usePortfolioData() {
         api.listDocuments(),
         api.listApplications(),
       ]);
-      setData({ properties, tenancies, compliance: compliance.items, complianceScore: compliance.score, repairs, documents, applications });
+      setData({ properties, tenancies, compliance: compliance.items, complianceScore: compliance.score, repairs, documents: documents.filter((d) => !PHOTO_DOCUMENT_TYPES.includes(d.type)), applications });
       setError(null);
+      // If alerts are switched on for this phone, keep them in step with the latest dates.
+      void refreshAlerts(api);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load');
     } finally {
@@ -87,7 +91,9 @@ export function ComplianceCard({ item, showAddress = true, onChanged }: { item: 
   const { api } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const due = item.expiresOn ?? item.dueDate;
+  const history = item.history ?? [];
 
   async function recordDone() {
     setBusy(true);
@@ -113,6 +119,21 @@ export function ComplianceCard({ item, showAddress = true, onChanged }: { item: 
         {item.severity === 'best_practice' ? ' · Best practice' : ''}
       </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {history.length > 0 ? (
+        <Pressable accessibilityRole="button" onPress={() => setShowHistory((shown) => !shown)}>
+          <Text style={[styles.muted, { color: colors.brand }]}>
+            {showHistory ? 'Hide earlier records' : `Show ${history.length} earlier record${history.length === 1 ? '' : 's'}`}
+          </Text>
+        </Pressable>
+      ) : null}
+      {showHistory
+        ? history.map((earlier) => (
+            <Text key={earlier.completedOn} style={styles.muted}>
+              Done {earlier.completedOn}
+              {earlier.expiresOn ? ` · ran to ${earlier.expiresOn}` : ''}
+            </Text>
+          ))
+        : null}
       {onChanged && !item.upcoming && item.status !== 'valid' ? <Button title="Record as done today" kind="secondary" onPress={recordDone} busy={busy} /> : null}
     </View>
   );
@@ -391,8 +412,11 @@ export function AddDocument({ properties, fixedPropertyId, onAdded }: { properti
 const SECTIONS = ['Overview', 'Properties', 'Rent', 'Compliance', 'Repairs', 'Documents', 'Applicants', 'Tools'] as const;
 
 const TOOLS: { href: string; title: string; hint: string }[] = [
-  { href: '/tools/finance', title: 'Finance and tax year', hint: 'Income, expenses, mileage and profit for your tax return' },
-  { href: '/tools/reminders', title: 'Reminders', hint: 'What falls due in the next 60 days' },
+  { href: '/tools/finance', title: 'Finance and tax year', hint: 'Income, expenses, repeating costs, mileage and profit for your tax return' },
+  { href: '/tools/bank-import', title: 'Bank statement import', hint: 'Record rent payments from the file your bank gives you' },
+  { href: '/tools/reminders', title: 'Reminders, calendar and alerts', hint: 'What falls due, in your calendar and as alerts on this phone' },
+  { href: '/tools/licences', title: 'Licences', hint: 'HMO and selective licences, their conditions and expiry' },
+  { href: '/tools/meters', title: 'Meter readings', hint: 'Gas, electricity and water readings with photos' },
   { href: '/tools/rent-reviews', title: 'Rent reviews', hint: 'When each rent can next be increased' },
   { href: '/tools/inspections', title: 'Inspections', hint: 'Plan visits and record notice given' },
   { href: '/tools/contractors', title: 'Contractors', hint: 'Trades you use, their registrations and insurance' },
@@ -403,6 +427,7 @@ const TOOLS: { href: string; title: string; hint: string }[] = [
   { href: '/tools/notices', title: 'Notices and possession', hint: 'A log of notices served and where any case has reached' },
   { href: '/tools/templates', title: 'Document templates', hint: 'Your own letters and agreements, filled in per tenancy' },
   { href: '/tools/import', title: 'Import properties', hint: 'Add many properties from a spreadsheet' },
+  { href: '/tools/backup', title: 'Backup and restore', hint: 'Save a copy of everything, or put a copy back' },
   { href: '/tools/account', title: 'Your account', hint: 'Sign-in details and password' },
 ];
 type Section = (typeof SECTIONS)[number];

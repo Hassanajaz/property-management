@@ -2,6 +2,7 @@ import type { IsoDate } from './dates.ts';
 import type { ArrearsSummary } from './rent/ledger.ts';
 import type { ExpenseCategory } from './tools.ts';
 import type {
+  Role,
   ComplianceStatus,
   DocumentType,
   MaintenanceCategory,
@@ -50,6 +51,8 @@ export interface ComplianceItemDto {
   expiresOn: IsoDate | null;
   dueDate: IsoDate | null;
   documentId: string | null;
+  /** Earlier certificates or checks for the same requirement, newest first. */
+  history?: { completedOn: IsoDate; expiresOn: IsoDate | null }[];
 }
 
 export interface MaintenanceUpdateDto {
@@ -189,6 +192,7 @@ export interface InspectionDto {
   /** Date written notice of the visit was given to the tenant. */
   noticeGivenOn: IsoDate | null;
   notes: string | null;
+  photoDocumentIds?: string[];
 }
 
 export interface ExpenseDto {
@@ -226,6 +230,7 @@ export interface InventoryItemDto {
   /** Null until the check-out inspection records it. */
   checkOut: Condition | null;
   checkOutNote: string | null;
+  photoDocumentIds?: string[];
 }
 
 export interface InventoryDto {
@@ -309,6 +314,66 @@ export interface TemplateDto {
   id: string;
   name: string;
   body: string;
+}
+
+export type RecurringFrequency = 'monthly' | 'quarterly' | 'yearly';
+
+/** A cost that repeats: the app adds it to the expenses each time it falls due. */
+export interface RecurringExpenseDto {
+  id: string;
+  propertyId: string | null;
+  propertyAddress: string | null;
+  category: ExpenseCategory;
+  description: string;
+  amountPence: number;
+  frequency: RecurringFrequency;
+  /** The first date it is paid; later ones follow at the chosen interval. */
+  startDate: IsoDate;
+  /** Null while it is still running. */
+  endDate: IsoDate | null;
+  /** The date of the latest expense already added from this. */
+  postedThrough: IsoDate | null;
+}
+
+export type MeterKind = 'gas' | 'electricity' | 'water';
+export type MeterOccasion = 'move_in' | 'move_out' | 'routine';
+
+export interface MeterReadingDto {
+  id: string;
+  propertyId: string;
+  propertyAddress: string;
+  meter: MeterKind;
+  reading: number;
+  date: IsoDate;
+  occasion: MeterOccasion;
+  photoDocumentId: string | null;
+  recordedBy: Role;
+}
+
+export type LicenceKind = 'hmo_mandatory' | 'hmo_additional' | 'selective' | 'landlord_registration' | 'other';
+
+export interface LicenceDto {
+  id: string;
+  propertyId: string;
+  propertyAddress: string;
+  kind: LicenceKind;
+  /** The council or body that issued it. */
+  authority: string;
+  reference: string | null;
+  issuedOn: IsoDate | null;
+  expiresOn: IsoDate;
+  maxOccupants: number | null;
+  conditions: string | null;
+}
+
+/** Everything in the account, for keeping a copy and putting it back. */
+export interface BackupDto {
+  app: 'lettly';
+  version: 1;
+  exportedAt: string;
+  data: unknown;
+  /** Uploaded files, when the server stores them. */
+  files?: { id: string; contentType: string; base64: string }[];
 }
 
 export interface UploadTicket {
@@ -420,8 +485,26 @@ export function createApiClient(baseUrl: string, getIdToken: () => Promise<strin
     listExpenses: () => request<ExpenseDto[]>('GET', '/expenses'),
     addExpense: (input: { propertyId: string | null; date: IsoDate; category: ExpenseCategory; description: string; amountPence: number }) =>
       request<ExpenseDto>('POST', '/expenses', input),
+    listRecurringExpenses: () => request<RecurringExpenseDto[]>('GET', '/recurring-expenses'),
+    addRecurringExpense: (input: { propertyId: string | null; category: ExpenseCategory; description: string; amountPence: number; frequency: RecurringFrequency; startDate: IsoDate }) =>
+      request<RecurringExpenseDto>('POST', '/recurring-expenses', input),
+    stopRecurringExpense: (id: string, input: { endDate: IsoDate }) => request<RecurringExpenseDto>('POST', `/recurring-expenses/${id}/stop`, input),
     listMileage: () => request<MileageDto[]>('GET', '/mileage'),
     addMileage: (input: { date: IsoDate; miles: number; purpose: string }) => request<MileageDto>('POST', '/mileage', input),
+
+    listMeterReadings: () => request<MeterReadingDto[]>('GET', '/meter-readings'),
+    addMeterReading: (input: { propertyId: string; meter: MeterKind; reading: number; date: IsoDate; occasion: MeterOccasion; photoDocumentId?: string | null }) =>
+      request<MeterReadingDto>('POST', '/meter-readings', input),
+
+    listLicences: () => request<LicenceDto[]>('GET', '/licences'),
+    saveLicence: (input: Omit<LicenceDto, 'id' | 'propertyAddress'> & { id?: string }) => request<LicenceDto>('POST', '/licences', input),
+
+    addInventoryPhoto: (tenancyId: string, itemId: string, documentId: string) => request<InventoryDto>('POST', `/tenancies/${tenancyId}/inventory/${itemId}/photos`, { documentId }),
+    addInspectionPhoto: (id: string, documentId: string) => request<InspectionDto>('POST', `/inspections/${id}/photos`, { documentId }),
+
+    /** A copy of everything in the account, and putting such a copy back. Restoring replaces what is there. */
+    exportData: () => request<BackupDto>('GET', '/backup'),
+    restoreData: (backup: BackupDto) => request<{ restored: true }>('POST', '/backup/restore', backup),
 
     requestUpload: (input: { fileName: string; contentType: string; type: DocumentType; propertyId?: string; tenancyId?: string }) =>
       request<UploadTicket>('POST', '/documents/upload-url', input),

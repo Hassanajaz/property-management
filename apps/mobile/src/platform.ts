@@ -1,3 +1,5 @@
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as SecureStore from 'expo-secure-store';
 import * as Sharing from 'expo-sharing';
@@ -66,6 +68,47 @@ export async function sharePdf(title: string, text: string): Promise<string | nu
   } catch {
     return 'The PDF could not be made. Try again, or share it as text instead.';
   }
+}
+
+/**
+ * Hands over a file made in the app (a calendar file, a backup). On the phone
+ * it opens the share sheet; in a browser it downloads the file.
+ */
+export async function shareFile(fileName: string, mimeType: string, content: string, uti?: string): Promise<string | null> {
+  try {
+    if (!isWeb) {
+      const uri = `${FileSystem.cacheDirectory ?? ''}${fileName}`;
+      await FileSystem.writeAsStringAsync(uri, content);
+      if (!(await Sharing.isAvailableAsync())) return 'Sharing is not available on this device.';
+      await Sharing.shareAsync(uri, { mimeType, UTI: uti, dialogTitle: fileName });
+      return null;
+    }
+    const browser = globalThis as unknown as {
+      document: { createElement: (tag: string) => { href: string; download: string; click: () => void } };
+      URL: { createObjectURL: (blob: Blob) => string; revokeObjectURL: (url: string) => void };
+    };
+    const url = browser.URL.createObjectURL(new Blob([content], { type: mimeType }));
+    const link = browser.document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    browser.URL.revokeObjectURL(url);
+    return `Saved as ${fileName} in your downloads.`;
+  } catch {
+    return 'The file could not be made. Please try again.';
+  }
+}
+
+/**
+ * Lets the person choose a text file (a bank statement, a backup) and returns
+ * what is in it, or null if they cancelled.
+ */
+export async function pickTextFile(types: string[]): Promise<{ name: string; text: string } | null> {
+  const result = await DocumentPicker.getDocumentAsync({ type: types, copyToCacheDirectory: true, multiple: false });
+  const asset = result.canceled ? undefined : result.assets[0];
+  if (!asset) return null;
+  if (isWeb && asset.file) return { name: asset.name, text: await asset.file.text() };
+  return { name: asset.name, text: await FileSystem.readAsStringAsync(asset.uri) };
 }
 
 /**
